@@ -1,0 +1,7 @@
+<!DOCTYPE html>
+<html>
+   <head>
+          <title> external css example </title>
+          <link rel="stylesheet" href="ExternalCSS.css">
+  </head>
+  <bo

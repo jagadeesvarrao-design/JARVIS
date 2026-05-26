@@ -1,0 +1,7 @@
+ 1:i command  jarvis to create a website
+ 2: jarvis asks for requirments 
+ 3: jarvis searches top 10 websites related to that domain of website we are creating and suggest me in requirments changes by deleting any of the old requirments and add any new requirments and after this jarvis asks me to conform the requirments 
+ 4:after conformation jarvis should create a website with the requirments i gave him 
+ 5:jarvis debugs the errors occured until the webite is fully build 
+ 6:launch the website using local server and shows me and ask for any changes to do or cofirm the website 
+ 7:jarvis should ask me to launch the website in the intenret 6: if i say yes jarvis should launch the website to the internet and store the port number in the project folder it has created for the website or if i say no jarvis should not launch the website 

@@ -1,0 +1,11 @@
+openai
+speechrecognition
+pyttsx3
+pyautogui
+pystray
+keyboard
+pillow
+pyaudio
+pywin32
+python-dotenv
+psutil
