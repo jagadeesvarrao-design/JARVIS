@@ -1,143 +1,102 @@
-# 🤖 JARVIS: Advanced Agentic AI Desktop Assistant
+<div align="center">
+  <h1>🤖 JARVIS</h1>
+  <p><strong>A Next-Generation Autonomous Voice Assistant & Multi-Agent Orchestrator</strong></p>
 
-> **Status: Operational // Port 5000: Clean // Systems: Nominal**
->
-> Welcome to the official repository of **JARVIS** (Just Another Rather Very Intelligent System)—a state-of-the-art, voice-activated, multi-agent desktop companion built to automate full-stack web engineering, workspace environments, real-time research, and computer-vision telemetry.
+  [![Python](https://img.shields.io/badge/Python-3.14-blue.svg)](https://www.python.org/)
+  [![CrewAI](https://img.shields.io/badge/CrewAI-Multi--Agent-orange.svg)](https://github.com/joaomdmoura/crewAI)
+  [![Gemini](https://img.shields.io/badge/Google-Gemini%202.5%20Pro-green.svg)](https://deepmind.google/technologies/gemini/)
+  [![License](https://img.shields.io/badge/License-MIT-purple.svg)](LICENSE)
+</div>
 
----
+<br>
 
-## 🌟 Key Capabilities
+JARVIS is not just a voice assistant; it is an intelligent desktop orchestrator capable of reasoning, web browsing, hardware automation, and operating an entire internal software engineering department autonomously.
 
-### 1. 🌐 The Agile Web Compiler (`ProjectAgent`)
-JARVIS features an industrial-grade website builder that builds, seeds, compiles, and tests full-stack Flask applications from single verbal descriptions.
-* **Competitor Trend Analysis**: Searches live web listings via DuckDuckGo and utilizes Gemini to extract modern UX/UI trends.
-* **Enterprise blueprints Codegen**: Generates beautiful, responsive frontend layouts (using Tailwind CSS CDN and FontAwesome icons) and structured Flask Application Factory backend blueprints with dynamic database seeding.
-* **Traceback-Aware Self-Healing**: Automatically reads traceback files upon startup crashes, feeds the actual implicated files to Gemini, and applies surgical JSON patches to resolve database, blueprint, or routing bugs on the fly.
-* **High-Speed Connection Reclaiming**: Employs system-wide TCP scanning (`psutil.net_connections`) to immediately clear Port 5000, killing parent processes and orphan subprocess trees in milliseconds to guarantee clean boots.
-
-### 2. 👁️ System Vision Core (`VisionAgent`)
-* The visual senses of JARVIS. Allows real-time screen captures combined with multimodal Gemini processing.
-* Can inspect UI layouts, debug visually, read text on screens, and describe your active workspace environment.
-
-### 3. 🧠 Long-Term Semantic Memory (`MemoryAgent`)
-* Powered by **ChromaDB** and the **SentenceTransformers** vector embedding models (`all-MiniLM-L6-v2`).
-* Remembers user preferences, past commands, and custom contextual requirements, retrieving them semantically during active tasks. Includes a safe import wrapper that prevents PyTorch DLL loader locks under Windows.
-
-### 4. 🎙️ High-Fidelity Recording Suite (`RecorderAgent`)
-* **Audio Capture**: Record micro-level high-quality WAV files using PyAudio.
-* **Video Capture**: Capture standard webcam video feeds using OpenCV.
-* **Screen Recording**: Record high-fps screen layouts into compressed AVI videos utilizing PIL and OpenCV.
-
-### 5. 📅 Scheduling & Reminders (`SecretaryAgent`)
-* Keeps a local, JSON-backed persistent reminders database. Run in a background thread to deliver desktop alerts at exact target minutes.
-
-### 6. 📰 Live Tech News Anchor (`NewsAgent`)
-* Aggregates real-time news articles and summarizes headlines using Gemini in the voice of a professional tech news anchor.
+Built entirely in Python, JARVIS integrates large language models (LLMs), persistent vector memory, computer vision, and complex task-delegation architectures into a unified voice interface.
 
 ---
 
-## 📐 System Architecture
+## 🌟 Core Architecture
 
-The following diagram illustrates how the individual modules and core agent classes interact under the JARVIS ecosystem:
+JARVIS is divided into several sophisticated modules that handle distinct functionalities:
 
-```mermaid
-graph TD
-    A[Voice / CLI Intake] --> B[jarvis.py System Core]
-    B --> C[ai_module.py LLM Coordinator]
-    B --> D[automation_module.py Local Actions]
-    B --> E[speech_module.py Voice Synthesis]
-    
-    subgraph Multi-Agent Workspace
-        F[ProjectAgent - Web Compiler]
-        G[VisionAgent - Multimodal Vision]
-        H[MemoryAgent - Vector DB]
-        I[RecorderAgent - Audio/Video]
-        J[SecretaryAgent - Scheduler]
-        K[NewsAgent - Web Scraper]
-    end
-    
-    B --> F
-    B --> G
-    B --> H
-    B --> I
-    B --> J
-    B --> K
-    
-    F --> L[Competitor Analysis]
-    F --> M[Enterprise Codegen]
-    F --> N[Traceback Auto-Healing]
-    F --> O[Process Port Reliever]
-    
-    H --> P[(ChromaDB Embeddings)]
-    J --> Q[(Reminders Cache)]
-```
+*   **`jarvis.py` (The CEO):** The master orchestrator that listens to voice commands, analyzes intent, and routes tasks to the appropriate sub-module or agent.
+*   **`ai_module.py` (The Brain):** Handles direct conversational interactions and reasoning via Google's Gemini 2.5 Pro models.
+*   **`agent_module.py` (The Workforce):** Manages specialized agents (Memory, Document Generation, Video/Audio Recording, News).
+*   **`vision_module.py` (The Eyes):** Interfaces with your local camera and screen buffers to provide real-time vision capabilities.
+*   **`automation_module.py` (The Hands):** Automates the Windows OS, utilizing `pyautogui` and `win32com` to control tabs, media, applications, and hardware settings.
 
 ---
 
-## 🗣️ Supported Commands Directory
+## 🔥 Key Features
 
-Below are the default voice/CLI triggers mapped to their corresponding backend services:
+### 🏢 Autonomous Software Factory (CrewAI Integration)
+By saying *"Jarvis, build a project"*, JARVIS boots up an isolated `uv` subprocess containing a **CrewAI Multi-Agent Factory**. 
+*   A **Product Manager** agent searches the live web for 2026 design trends and writes a Software Requirement Specification (SRS).
+*   A **Senior Software Engineer** agent autonomously writes the Python/HTML/CSS code files directly to your hard drive.
+*   A **QA Reviewer** agent audits the code for bugs.
+JARVIS handles the orchestration, providing terminal feedback, and opens the final generated project folder when the agents finish compiling.
 
-| Commands Trigger Category | Verbal / Written Pattern Examples | Core Module Executed | Action Description |
-| :--- | :--- | :--- | :--- |
-| **Full-Stack Build** | `"build website about coffee shop"`, `"create website for gym"` | `ProjectAgent` | Runs market research, compiles full-stack Flask/Tailwind pages, seeds database, and opens live local preview on Port 5000. |
-| **Developer handoff** | `"push to github"`, `"deploy project to github"` | `ProjectAgent` | Creates a secure private repository on GitHub, commits all codebase files, and pushes changes using your encrypted credentials. |
-| **Cloud database** | `"migrate database to postgres"`, `"connect to cloud db"` | `ProjectAgent` | Reconfigures SQLite connection strings to remote cloud URIs dynamically. |
-| **System Vision** | `"what is on my screen"`, `"inspect layout"` | `VisionAgent` | Takes screen capture and runs visual Gemini analysis. |
-| **Semantic Recall** | `"remember that I prefer dark mode"`, `"recall preferences"` | `MemoryAgent` | Writes or reads semantic memories inside vector databases. |
-| **Workspace Control** | `"open chrome"`, `"launch visual studio"`, `"search for python"` | `AutomationAgent` | Automatically spawns local desktop tools or opens browser queries. |
-| **Recording Engine** | `"start screen recording"`, `"record audio"`, `"stop recording"` | `RecorderAgent` | Records audio, webcam video, or screen configurations. |
-| **News Summaries** | `"what is the tech news"`, `"summarize technology trends"` | `NewsAgent` | Scrapes DuckDuckGo and recites summarized technology headlines. |
-| **Reminders** | `"set a reminder for 14:30 to join meeting"`, `"check alerts"` | `SecretaryAgent` | Manages local scheduler reminders databases. |
+### 🌐 Live Web Search & Image Retrieval
+JARVIS is hooked directly into the DuckDuckGo Search API (`ddgs`). He can bypass LLM hallucinations by securely browsing the web for live, up-to-date data, summarizing top articles, and fetching high-definition images natively to your desktop.
+
+### 🧠 Persistent Vector Memory
+Utilizing **ChromaDB**, JARVIS features a dedicated long-term memory module. When instructed to *"Remember that..."*, JARVIS stores the information via vector embeddings, allowing for semantic recall across different user sessions.
+
+### 🎥 Multi-Modal Recording Suite
+JARVIS features a background-threaded `RecorderAgent` capable of seamlessly capturing:
+*   Real-time Screen Recording.
+*   Webcam Video Recording.
+*   Microphone Audio Recording.
+
+### 📧 Automated Communications
+JARVIS has deep integration into communication channels:
+*   **Email:** Can autonomously draft emails, request attachments via secure UI prompts, and dispatch emails via SMTP.
+*   **WhatsApp:** Integrates seamlessly into the native Windows WhatsApp application to dispatch messages using URI protocols.
+
+### 📝 Dynamic Document Generation
+JARVIS can research a topic from memory and output beautifully formatted PDF reports using `FPDF` (featuring a custom dark-mode, neon-styled document template) or standard Word Documents (`.docx`).
 
 ---
 
-## 🚀 Getting Started
+## 🛠️ Installation & Setup
 
-### 📋 Prerequisites
-Ensure your local machine has the following packages installed:
-* Python 3.10+
-* Git
-* FFmpeg (if recording video/audio)
-* SQLite3
-
-### 🔧 Installation
-1. **Clone the Repository**:
+1. **Clone the Repository:**
    ```bash
-   git clone https://github.com/<your-username>/JARVIS.git
+   git clone https://github.com/jagadeesvarrao-design/JARVIS.git
    cd JARVIS
    ```
 
-2. **Configure Virtual Environment**:
+2. **Install Dependencies:**
+   Ensure you are using Python 3.10+ (Recommended: 3.12+).
    ```bash
-   python -m venv .venv
-   .venv\Scripts\activate   # On Windows
-   source .venv/bin/activate  # On Linux/macOS
+   pip install -r requirments.txt
    ```
 
-3. **Install Dependencies**:
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-4. **Initialize Environment Variables**:
-   Create a `.env` file in the root directory:
+3. **Configure Environment Variables:**
+   Create a `.env` file in the root directory and add your API Keys:
    ```env
-   GEMINI_API_KEY=your_gemini_api_key
-   GITHUB_TOKEN=your_github_personal_access_token
-   OWNER_NAME=BOSS
+   GEMINI_API_KEY=your_google_gemini_key_here
    EMAIL_USER=your_email@gmail.com
-   EMAIL_PASS=your_email_app_password
+   EMAIL_PASS=your_app_password
    ```
 
-5. **Start JARVIS**:
+4. **Launch JARVIS:**
+   Run the batch file for standard boot sequence:
+   ```bash
+   wakeup_jarvis.bat
+   ```
+   Or run the Python script directly:
    ```bash
    python jarvis.py
    ```
 
 ---
 
-## 🛡️ License & Safety Protocol
-JARVIS is configured with a restricted security wrapper inside the `GeneralistAgent` and `ProjectAgent` classes. Local command executions, workspace modifications, and GitHub operations are bound to your user directory (`Desktop/jarvis documents` and designated workspace paths) to prevent accidental directory overwrites or OS file deletions.
+## 🚀 Future Roadmap
+- [ ] Integration with advanced Home Assistant IoT devices.
+- [ ] Native Streamlit UI dashboard for real-time memory visualization.
+- [ ] Multi-threaded LLM streaming for lower latency responses.
 
-*Created autonomously with 🧠 by JARVIS.*
+## 📄 License
+This project is licensed under the MIT License - see the LICENSE file for details.
