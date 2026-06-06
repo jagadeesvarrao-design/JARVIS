@@ -722,7 +722,7 @@ class JARVIS:
             return False
         
         # ==========================================
-        # 🏗️  AGILE DEVELOPMENT MODE (UPDATED!)
+        # 🏗️  MULTI-AGENT FACTORY (CREWAI INTEGRATION)
         # ==========================================
         dev_triggers = [
             "build a website", "create a website", "make a website", "design a website",
@@ -737,138 +737,54 @@ class JARVIS:
             topic = topic.replace("about", "").replace("for", "").replace("a ", "").strip()
             if not topic: topic = "Business"
             
-            self._respond(f"Initiating Development Protocol for a {topic} website.")
+            project_name = f"{topic.replace(' ', '_')}_Project"
+            project_dir = os.path.join(get_desktop_path(), "PROJECTS", project_name)
             
-            # STEP 2: AUTONOMOUS REQUIREMENTS & ANALYSIS
-            self._respond(f"Analyzing competitor trends and past preferences for a premium {topic} website...")
+            self._respond(f"Initiating Multi-Agent CrewAI Factory for {topic}.")
+            self._respond("My engineering team is building this, please wait. This may take up to 60 seconds.")
             
-            agent = ProjectAgent()
-            
-            # 🧠 RECALL: Check if user has past preferences for websites
-            past_preferences = self.memory_brain.recall(f"preferences for {topic} websites")
-            trends = agent.research_market_trends(topic)
-            
-            # Generate requirements autonomously
-            self._respond("Formulating requirements autonomously based on modern 2026 industry standards...")
-            req_prompt = f"Write a comprehensive list of modern features and design requirements for a premium {topic} website in 2026. Keep it concise. User past preferences: {past_preferences}"
-            client_reqs = self.brain.get_response(req_prompt)
-            
-            # Lock requirements and start build
-            self._respond("Starting the build process. Generating codebase files...")
-            project_name = f"{topic}_Project"
-            path = agent.save_requirements(project_name, client_reqs)
-            
-            # STEP 3: BUILD & LOCAL RUN
-            full_reqs_context = f"Topic: {topic}. Requirements: {client_reqs}. Trends: {trends}"
-            code_files = agent.generate_initial_code(full_reqs_context)
-            if code_files:
-                agent.write_code_files(code_files)
-            
-            self._respond("Generating project documentation PDF...")
-            agent.generate_project_pdf(client_reqs, trends)
-            
-            self._respond("Build complete. Launching local preview on Port 5000.")
-            local_url = agent.launch_with_autofix()
-            webbrowser.open(local_url)
-            
-            # STEP 4: TIMEOUT-IMMUNE TESTING & ITERATION LOOP
-            self._respond("The site is live locally. Take a moment to test it.")
-            self._respond("Are you satisfied, or do you want changes? (Say 'Deploy' to finish, 'Change' to edit, or 'Stop' to exit)")
-            
-            iterating = True
-            while iterating:
-                feedback = self._force_listen(retries=0)
-                
-                if not feedback:
-                    time.sleep(2)
-                    continue
-                    
-                if "change" in feedback.lower() or "edit" in feedback.lower():
-                    self._respond("What changes should I make to the website?")
-                    change_req = self._force_listen(retries=1)
-                    if change_req:
-                        self._respond("Refactoring codebase...")
-                        full_reqs_context += f"\nUser Feedback: {change_req}"
-                        new_code = agent.update_code(full_reqs_context, change_req)
-                        if new_code:
-                            agent.write_code_files(new_code)
-                            agent.launch_with_autofix()
-                            self._respond("Changes applied. Refreshing preview.")
-                            self._respond("Are you satisfied, or do you want changes? (Say 'Deploy' to finish, 'Change' to edit, or 'Stop' to exit)")
-                        else:
-                            self._respond("Refactoring failed. Please try again.")
-                            
-                elif "deploy" in feedback.lower():
-                    iterating = False
-                    
-                elif "stop" in feedback.lower():
-                    agent.stop_server()
-                    self._respond("Project saved. Shutting down server.")
-                    return False
-
-            # STEP 6: DEPLOYMENT & HANDOVER
-            self._respond("Preparing for Internet Deployment.")
-            self._respond("Do you have a Cloud Database URL (MongoDB/Postgres)? Or say 'No' for local storage.")
-            
-            db_input = self._force_listen()
-            db_type = "Local SQLite"
-            
-            if db_input and ("http" in db_input or "postgres" in db_input or "mongo" in db_input):
-                 # Handle Voice vs Paste
-                if len(db_input) < 10:
-                    import pyautogui
-                    cloud_url = pyautogui.prompt("Paste Cloud DB URL:")
-                else:
-                    cloud_url = db_input
-                
-                if cloud_url:
-                    self._respond("Migrating database architecture to Cloud...")
-                    if agent.migrate_to_cloud_db(cloud_url):
-                        db_type = "Cloud DB"
-                        # Restart to apply new config
-                        agent.launch_with_autofix()
-            
-            self._respond("Deploying to the public internet...")
             try:
-                public_url = agent.deploy_to_internet(database_type=db_type)
-                self._respond(f"Deployment Successful. The site is live at: {public_url}")
-                self._respond("I have saved the Port Number and Credentials in the project folder.")
-                webbrowser.open(public_url)
+                import subprocess
+                import random
+                from config import API_KEYS_POOL
                 
-                # Wait for user to finish
-                self._respond("Say 'Stop' when you are done demonstrating.")
-                self._force_listen()
-                agent.stop_server()
+                # Select a random API key from JARVIS's pool to avoid hitting limits
+                api_key = random.choice(API_KEYS_POOL)
                 
-                self.project_agent = agent
+                # The factory directory
+                factory_dir = os.path.join(get_desktop_path(), "PROJECTS", "Multi_Agent_Factory")
                 
-                # STEP 7: GITHUB HANDOVER
-                self._respond("Would you like me to deploy this project to your GitHub account? Please say yes or no.")
-                github_resp = self._force_listen()
-                if github_resp and any(w in github_resp.lower() for w in ["yes", "yep", "sure", "ok", "yeah"]):
-                    self._respond("Preparing GitHub repository...")
-                    readme_path = os.path.join(agent.project_path, "README.md")
-                    if not os.path.exists(readme_path):
-                        with open(readme_path, "w", encoding="utf-8") as f:
-                            f.write(f"# {agent.project_name}\n\nAutonomously generated by JARVIS AI.\n\n## Description\n{client_reqs}\n\n## Market Trends Analysis\n{trends}\n")
-                    
-                    self._respond("Authenticating and pushing repository to GitHub...")
-                    github_msg = agent.push_to_github()
-                    self._respond(github_msg)
-                    
-                    try:
-                        url_match = re.search(r'https://github.com/\S+', github_msg)
-                        if url_match:
-                            webbrowser.open(url_match.group(0))
-                    except:
-                        pass
+                # Call the uv environment
+                uv_executable = "uv" # Assumes uv is on path
+                cmd = [
+                    uv_executable, "run", "main.py",
+                    "--topic", topic,
+                    "--dir", project_dir,
+                    "--api_key", api_key
+                ]
+                
+                # Run the subprocess
+                print(f"🤖 JARVIS: Spawning CrewAI Subprocess...")
+                result = subprocess.run(
+                    cmd, 
+                    cwd=factory_dir, 
+                    capture_output=True, 
+                    text=True,
+                    encoding='utf-8', 
+                    errors='ignore'
+                )
+                
+                if result.returncode == 0:
+                    self._respond(f"Project built successfully! The files are saved in the PROJECTS folder under {project_name}.")
+                    os.startfile(project_dir)
                 else:
-                    self._respond("Understood. Skipping GitHub deployment.")
-                
+                    self._respond("The engineering team encountered an error during compilation.")
+                    print(f"CrewAI Error:\n{result.stderr}\n{result.stdout}")
+                    
             except Exception as e:
-                self._respond("Deployment Error. Checking logs.")
-                print(e)
-            
+                self._respond("Failed to launch the Multi-Agent Factory.")
+                print(f"Subprocess Error: {e}")
+                
             return False
         
         # ==========================================
