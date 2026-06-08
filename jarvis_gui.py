@@ -18,8 +18,8 @@ from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QHBoxLayout, QV
                              QLabel, QTextEdit, QPushButton, QDesktopWidget, QDialog, 
                              QLineEdit, QFormLayout, QFileDialog, QMessageBox, QFrame, 
                              QGraphicsOpacityEffect) # Added QGraphicsOpacityEffect
-from PyQt5.QtCore import Qt, QThread, pyqtSignal, QTimer, QRectF, QPointF, QPropertyAnimation, QEasingCurve # Added Animation classes
-from PyQt5.QtGui import QPainter, QColor, QPen, QBrush, QFont, QPixmap
+from PyQt5.QtCore import Qt, QThread, pyqtSignal, QTimer, QRectF, QPointF, QPropertyAnimation, QEasingCurve, QRect # Added Animation classes
+from PyQt5.QtGui import QPainter, QColor, QPen, QBrush, QFont, QPixmap, QCursor
 
 # Import Backend
 from jarvis import JARVIS

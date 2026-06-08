@@ -377,7 +377,7 @@ class MemoryAgent:
                     [sys.executable, "-c", "import torch; import chromadb; print('OK')"],
                     capture_output=True,
                     text=True,
-                    timeout=3.0
+                    timeout=20.0
                 )
                 if res.returncode == 0 and "OK" in res.stdout:
                     pytorch_working = True
