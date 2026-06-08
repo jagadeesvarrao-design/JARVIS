@@ -190,6 +190,10 @@ class FaceWidget(QWidget):
         self.blink_h = 0
         self.is_blinking = False
         
+        # Breathing pulse for listening state
+        self.pulse_val = 1.0
+        self.pulse_dir = -1
+        
         # Timers
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.animate)
@@ -227,7 +231,28 @@ class FaceWidget(QWidget):
             self.mouth_height = random.randint(5, 25)
         else:
             self.mouth_height = 2
+            
+        # Pulse animation for listening state
+        if self.state == "listening":
+            self.pulse_val += self.pulse_dir * 0.04
+            if self.pulse_val <= 0.4:
+                self.pulse_val = 0.4
+                self.pulse_dir = 1
+            elif self.pulse_val >= 1.0:
+                self.pulse_val = 1.0
+                self.pulse_dir = -1
+        else:
+            self.pulse_val = 1.0
+            
         self.update()
+
+    def mousePressEvent(self, event):
+        parent = self.parentWidget()
+        while parent and not isinstance(parent, QMainWindow):
+            parent = parent.parentWidget()
+        if parent and hasattr(parent, 'toggle_collapse'):
+            parent.toggle_collapse()
+        event.accept()
 
     def paintEvent(self, event):
         painter = QPainter(self)
@@ -237,7 +262,12 @@ class FaceWidget(QWidget):
         eye_w, eye_h = 35, 25 - (self.blink_h / 2)
         if eye_h < 2: eye_h = 2
         
-        painter.setBrush(QBrush(self.color))
+        # Apply glow/pulse effect to color
+        pulsed_color = QColor(self.color)
+        if self.state == "listening":
+            pulsed_color.setAlpha(int(255 * self.pulse_val))
+            
+        painter.setBrush(QBrush(pulsed_color))
         painter.setPen(Qt.NoPen)
         
         # Left Eye
@@ -248,7 +278,11 @@ class FaceWidget(QWidget):
         # Draw Mouth (Digital Waveform)
         center_x = 70
         mouth_y = 80
-        painter.setPen(QPen(self.color, 3))
+        
+        pen_color = QColor(self.color)
+        if self.state == "listening":
+            pen_color.setAlpha(int(255 * self.pulse_val))
+        painter.setPen(QPen(pen_color, 3))
         
         if self.state == "talking":
             # Draw a jagged voice line
@@ -340,45 +374,83 @@ class JarvisDock(QMainWindow):
         self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool)
         self.setAttribute(Qt.WA_TranslucentBackground)
 
-        # Position at Bottom
-        screen = QDesktopWidget().screenGeometry()
-        self.width = 900
-        self.height = 140
-        self.move((screen.width() - self.width) // 2, screen.height() - self.height - 40)
-        self.resize(self.width, self.height)
+        # State flags
+        self.is_expanded = False
+        self.is_relocating = False
 
-        # Main Layout (Glass Bar)
-        # We save this as self.container to apply effects to it
+        # Screen calculations
+        screen = QDesktopWidget().screenGeometry()
+        self.collapsed_width = 320
+        self.collapsed_height = 42
+        self.expanded_width = 860
+        self.expanded_height = 160
+        
+        # Initial position: floating Top-Center
+        self.move((screen.width() - self.collapsed_width) // 2, 30)
+        self.resize(self.collapsed_width, self.collapsed_height)
+
+        # Main glassmorphic container
         self.container = QFrame()
         self.container.setStyleSheet("""
             QFrame {
-                background-color: rgba(10, 10, 10, 230);
+                background-color: rgba(10, 10, 10, 235);
                 border: 2px solid cyan;
                 border-radius: 20px;
             }
         """)
-        
-        # ===================================================
-        # 👻 GHOST MODE SETUP (Opacity)
-        # ===================================================
-        self.opacity_effect = QGraphicsOpacityEffect(self.container)
-        self.opacity_effect.setOpacity(1.0) # Start fully visible
-        self.container.setGraphicsEffect(self.opacity_effect)
-        
-        # Animation
-        self.anim = QPropertyAnimation(self.opacity_effect, b"opacity")
-        self.anim.setDuration(500) # 0.5 seconds fade duration
-        self.anim.setEasingCurve(QEasingCurve.InOutQuad)
-        # ===================================================
-        
-        layout = QHBoxLayout(self.container)
         self.setCentralWidget(self.container)
 
-        # 1. THE FACE (Left)
-        self.face = FaceWidget()
-        layout.addWidget(self.face)
+        self.main_layout = QVBoxLayout(self.container)
+        self.main_layout.setContentsMargins(6, 6, 6, 6)
 
-        # 2. THE CHAT LOG (Center)
+        # ----------------------------------------------------
+        # 1. COLLAPSED VIEW LAYOUT
+        # ----------------------------------------------------
+        self.collapsed_widget = QWidget()
+        collapsed_layout = QHBoxLayout(self.collapsed_widget)
+        collapsed_layout.setContentsMargins(15, 0, 15, 0)
+
+        # Status Dot
+        self.lbl_status_dot = QLabel()
+        self.lbl_status_dot.setFixedSize(12, 12)
+        self.lbl_status_dot.setStyleSheet("background-color: cyan; border-radius: 6px;")
+
+        # Status Text
+        self.lbl_status_text = QLabel("JARVIS: ONLINE")
+        self.lbl_status_text.setStyleSheet("color: cyan; font-family: Consolas; font-size: 11px; font-weight: bold; border: none; background: transparent;")
+
+        # Clock Text
+        self.lbl_clock = QLabel()
+        self.lbl_clock.setStyleSheet("color: white; font-family: Consolas; font-size: 11px; border: none; background: transparent;")
+        
+        collapsed_layout.addWidget(self.lbl_status_dot)
+        collapsed_layout.addWidget(self.lbl_status_text)
+        collapsed_layout.addStretch()
+        collapsed_layout.addWidget(self.lbl_clock)
+
+        self.main_layout.addWidget(self.collapsed_widget)
+
+        # Clock Updater Timer
+        self.clock_timer = QTimer(self)
+        self.clock_timer.timeout.connect(self.update_clock)
+        self.clock_timer.start(1000)
+        self.update_clock()
+
+        # ----------------------------------------------------
+        # 2. EXPANDED CONSOLE LAYOUT
+        # ----------------------------------------------------
+        self.expanded_widget = QWidget()
+        expanded_layout = QHBoxLayout(self.expanded_widget)
+        expanded_layout.setContentsMargins(5, 0, 5, 0)
+
+        # Face/Avatar Widget (Left)
+        self.face = FaceWidget()
+        expanded_layout.addWidget(self.face)
+
+        # Center Console (Chat Logs & Silent Text Input line)
+        center_layout = QVBoxLayout()
+        center_layout.setContentsMargins(5, 0, 5, 0)
+
         self.chat_display = QTextEdit()
         self.chat_display.setReadOnly(True)
         self.chat_display.setStyleSheet("""
@@ -389,80 +461,226 @@ class JarvisDock(QMainWindow):
             font-size: 13px;
         """)
         self.chat_display.setPlaceholderText("SYSTEM ONLINE. WAITING FOR COMMAND...")
-        layout.addWidget(self.chat_display)
 
-        # 3. CONTROL PANEL (Right)
+        self.cmd_input = QLineEdit()
+        self.cmd_input.setPlaceholderText("Type silent command and press Enter...")
+        self.cmd_input.setStyleSheet("""
+            QLineEdit {
+                background-color: rgba(20, 20, 20, 180);
+                border: 1px solid #00ffff;
+                border-radius: 5px;
+                color: #00ffff;
+                font-family: Consolas;
+                font-size: 12px;
+                padding: 4px;
+            }
+            QLineEdit:focus {
+                border: 1px solid #ff00ff;
+            }
+        """)
+        self.cmd_input.returnPressed.connect(self.submit_text_command)
+
+        center_layout.addWidget(self.chat_display)
+        center_layout.addWidget(self.cmd_input)
+        expanded_layout.addLayout(center_layout, stretch=4)
+
+        # Control Panel Widgets (Right)
         btn_layout = QVBoxLayout()
-        
-        # Add Contact Button
+        btn_layout.setContentsMargins(5, 0, 5, 0)
+
         self.btn_contact = QPushButton("➕ Update DB")
         self.btn_contact.setToolTip("Add Phone or Email")
         self.btn_contact.setStyleSheet("""
-            QPushButton { background-color: #004444; color: cyan; border: 1px solid cyan; border-radius: 5px; padding: 5px; font-weight: bold; }
+            QPushButton { background-color: #004444; color: cyan; border: 1px solid cyan; border-radius: 5px; padding: 4px; font-weight: bold; font-size: 11px; }
             QPushButton:hover { background-color: #006666; }
         """)
         self.btn_contact.clicked.connect(self.open_add_contact)
-        
-        # Attach File Button
+
         self.btn_attach = QPushButton("📎 Attach File")
         self.btn_attach.setToolTip("Select file for Email")
         self.btn_attach.setStyleSheet("""
-            QPushButton { background-color: #004444; color: white; border: 1px solid white; border-radius: 5px; padding: 5px; }
+            QPushButton { background-color: #004444; color: white; border: 1px solid white; border-radius: 5px; padding: 4px; font-size: 11px; }
             QPushButton:hover { background-color: #006666; }
         """)
         self.btn_attach.clicked.connect(self.attach_file)
-        
-        # Status Label
+
         self.lbl_attach = QLabel("No Attachment")
         self.lbl_attach.setStyleSheet("color: gray; font-size: 10px; border: none; background: transparent;")
         self.lbl_attach.setAlignment(Qt.AlignCenter)
-        
+
+        self.btn_collapse = QPushButton("➖ Collapse")
+        self.btn_collapse.setStyleSheet("""
+            QPushButton { background-color: #440000; color: #ff5555; border: 1px solid #ff5555; border-radius: 5px; padding: 4px; font-weight: bold; font-size: 11px; }
+            QPushButton:hover { background-color: #660000; }
+        """)
+        self.btn_collapse.clicked.connect(self.collapse)
+
         btn_layout.addWidget(self.btn_contact)
         btn_layout.addWidget(self.btn_attach)
         btn_layout.addWidget(self.lbl_attach)
-        
-        layout.addLayout(btn_layout)
+        btn_layout.addWidget(self.btn_collapse)
 
-        # Backend Thread
+        expanded_layout.addLayout(btn_layout, stretch=1)
+        self.main_layout.addWidget(self.expanded_widget)
+
+        # Hide the expanded components at initialization
+        self.expanded_widget.hide()
+
+        # ----------------------------------------------------
+        # 3. ANIMATIONS & TIMERS SETUP
+        # ----------------------------------------------------
+        self.geom_anim = QPropertyAnimation(self, b"geometry")
+        self.geom_anim.setDuration(250)
+        self.geom_anim.setEasingCurve(QEasingCurve.InOutQuad)
+
+        # 2-second hover timer for relocating
+        self.relocate_hover_timer = QTimer(self)
+        self.relocate_hover_timer.setSingleShot(True)
+        self.relocate_hover_timer.timeout.connect(self.start_relocation)
+
+        # Global mouse tracker loop for sticky drag
+        self.relocate_tracking_timer = QTimer(self)
+        self.relocate_tracking_timer.timeout.connect(self.track_cursor)
+
+        # Connect GUI updates to backend Thread
         self.thread = JarvisThread()
-        # ✨ Connect signal to update_state instead of face directly to handle Ghost Mode
         self.thread.state_signal.connect(self.update_state) 
         self.thread.text_signal.connect(self.update_chat)
-        self.thread.image_signal.connect(self.show_hologram) # ✨ CONNECT IMAGE SIGNAL
+        self.thread.image_signal.connect(self.show_hologram)
         self.thread.start()
 
-    # ===================================================
-    # 👻 GHOST MODE LOGIC (States & Hover)
-    # ===================================================
-    def update_state(self, state):
-        self.face.set_state(state)
-        
-        if state == "idle":
-            # Fade Out (Dim) to 20%
-            self.anim.setStartValue(self.opacity_effect.opacity())
-            self.anim.setEndValue(0.2)
-            self.anim.start()
-        else:
-            # Fade In (Bright) to 100%
-            self.anim.setStartValue(self.opacity_effect.opacity())
-            self.anim.setEndValue(1.0)
-            self.anim.start()
+    # --- CLOCK UPDATES ---
+    def update_clock(self):
+        self.lbl_clock.setText(datetime.datetime.now().strftime("%I:%M:%S %p"))
 
+    # --- DRAG RELOCATION (2s Hover Sticky Follow) ---
+    def start_relocation(self):
+        if not self.is_expanded:
+            self.is_relocating = True
+            # Visual indicator: Magenta border
+            self.container.setStyleSheet("""
+                QFrame {
+                    background-color: rgba(10, 10, 10, 235);
+                    border: 2px solid magenta;
+                    border-radius: 20px;
+                }
+            """)
+            self.relocate_tracking_timer.start(15)
+
+    def track_cursor(self):
+        pos = QCursor.pos()
+        self.move(pos.x() - self.width() // 2, pos.y() - self.height() // 2)
+
+    def stop_relocation(self):
+        self.is_relocating = False
+        self.relocate_tracking_timer.stop()
+        # Restore Cyan border
+        self.container.setStyleSheet("""
+            QFrame {
+                background-color: rgba(10, 10, 10, 235);
+                border: 2px solid cyan;
+                border-radius: 20px;
+            }
+        """)
+
+    # --- EVENT OVERRIDES ---
     def enterEvent(self, event):
-        # Mouse Hover -> Brighten
-        self.anim.setStartValue(self.opacity_effect.opacity())
-        self.anim.setEndValue(1.0)
-        self.anim.start()
+        # Start hover relocation countdown if collapsed and not relocating
+        if not self.is_expanded and not self.is_relocating:
+            self.relocate_hover_timer.start(2000)
         super().enterEvent(event)
 
     def leaveEvent(self, event):
-        # Mouse Leave -> Return to appropriate brightness
-        if self.face.state == "idle":
-            self.anim.setStartValue(self.opacity_effect.opacity())
-            self.anim.setEndValue(0.2)
-            self.anim.start()
+        self.relocate_hover_timer.stop()
         super().leaveEvent(event)
-    # ===================================================
+
+    def mousePressEvent(self, event):
+        if self.is_relocating:
+            self.stop_relocation()
+            event.accept()
+        else:
+            # Click collapsed pill to expand console
+            if not self.is_expanded:
+                self.expand()
+                event.accept()
+            else:
+                super().mousePressEvent(event)
+
+    # --- GEOMETRY TRANSITIONS ---
+    def toggle_collapse(self):
+        if self.is_expanded:
+            self.collapse()
+        else:
+            self.expand()
+
+    def expand(self):
+        if self.is_expanded or self.is_relocating: return
+        self.is_expanded = True
+        
+        current_geom = self.geometry()
+        center_x = current_geom.x() + current_geom.width() // 2
+        
+        new_x = center_x - self.expanded_width // 2
+        new_y = current_geom.y()
+        
+        self.geom_anim.stop()
+        self.geom_anim.setStartValue(current_geom)
+        self.geom_anim.setEndValue(QRect(new_x, new_y, self.expanded_width, self.expanded_height))
+        
+        self.collapsed_widget.hide()
+        self.expanded_widget.show()
+        self.geom_anim.start()
+
+    def collapse(self):
+        if not self.is_expanded: return
+        self.is_expanded = False
+        
+        current_geom = self.geometry()
+        center_x = current_geom.x() + current_geom.width() // 2
+        
+        new_x = center_x - self.collapsed_width // 2
+        new_y = current_geom.y()
+        
+        self.geom_anim.stop()
+        self.geom_anim.setStartValue(current_geom)
+        self.geom_anim.setEndValue(QRect(new_x, new_y, self.collapsed_width, self.collapsed_height))
+        
+        self.expanded_widget.hide()
+        self.collapsed_widget.show()
+        self.geom_anim.start()
+
+    # --- SILENT COMMAND INTERACTION ---
+    def submit_text_command(self):
+        text = self.cmd_input.text().strip()
+        if text:
+            self.cmd_input.clear()
+            self.update_chat(f"👤 {text}")
+            log_to_dashboard("user", text)
+            
+            # Execute command in background thread so GUI remains fluid
+            def run_cmd():
+                self.thread.gui_process_wrapper(text)
+            import threading
+            threading.Thread(target=run_cmd, daemon=True).start()
+
+    # --- GUI COMPONENT UPDATES ---
+    def update_state(self, state):
+        self.face.set_state(state)
+        self.lbl_status_text.setText(f"JARVIS: {state.upper()}")
+        
+        # Color codes matching system states
+        if state == "idle":
+            self.lbl_status_dot.setStyleSheet("background-color: cyan; border-radius: 6px;")
+            self.lbl_status_text.setStyleSheet("color: cyan; font-family: Consolas; font-size: 11px; font-weight: bold; border: none; background: transparent;")
+        elif state == "listening":
+            self.lbl_status_dot.setStyleSheet("background-color: #00ff64; border-radius: 6px;")
+            self.lbl_status_text.setStyleSheet("color: #00ff64; font-family: Consolas; font-size: 11px; font-weight: bold; border: none; background: transparent;")
+        elif state == "talking":
+            self.lbl_status_dot.setStyleSheet("background-color: #ff3232; border-radius: 6px;")
+            self.lbl_status_text.setStyleSheet("color: #ff3232; font-family: Consolas; font-size: 11px; font-weight: bold; border: none; background: transparent;")
+        elif state == "thinking":
+            self.lbl_status_dot.setStyleSheet("background-color: #b400ff; border-radius: 6px;")
+            self.lbl_status_text.setStyleSheet("color: #b400ff; font-family: Consolas; font-size: 11px; font-weight: bold; border: none; background: transparent;")
 
     def update_chat(self, text):
         self.chat_display.append(text)
