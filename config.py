@@ -5,13 +5,21 @@ load_dotenv()
 
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
 # ==================== KEYS ====================
-API_KEYS_POOL = [
+API_KEYS_POOL = []
+_env_key = os.getenv("GEMINI_API_KEY")
+if _env_key:
+    API_KEYS_POOL.append(_env_key)
+
+_fallbacks = [
     "AIzaSyCf4iganD633ovflagxDAzXDkUc5rPh7Ts",
     "AIzaSyDsZKabtGrPWpyFHteTAUu19-Reh0m8gPM",
     "AIzaSyAd0m1WZ3rVpkv0nHoUtMNiGqAJA6i1cu0",
     "AIzaSyCYyui97LZAl0dXU8RbaqdcN8gPUhxtcFE",
     "AIzaSyAbIfNzr8Kve8cZ0ZECT6nF4JlhN1ZVrhE"
 ]
+for _k in _fallbacks:
+    if _k not in API_KEYS_POOL:
+        API_KEYS_POOL.append(_k)
 # FIX: usage of the correct 2026 Free Model
 AI_MODELS = ["gemini-2.5-flash-lite",
              "gemini-2.0-flash-lite",

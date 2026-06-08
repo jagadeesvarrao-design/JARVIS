@@ -1,11 +1,40 @@
+# Core
 openai
-speechrecognition
-pyttsx3
-pyautogui
-pystray
-keyboard
-pillow
-pyaudio
-pywin32
+google-genai
 python-dotenv
 psutil
+flask
+flask-sqlalchemy
+
+# Voice & Audio
+speechrecognition
+pyttsx3
+pyaudio
+
+# Automation & Vision
+pyautogui
+keyboard
+pywin32
+opencv-python
+mediapipe
+pillow
+mss
+
+# Web & APIs
+pywhatkit
+wikipedia
+beautifulsoup4
+ddgs
+pyngrok
+
+# Developer & Agent Tools
+AppOpener
+GitPython
+PyGithub
+open-interpreter
+schedule
+
+# UI
+PyQt5
+pystray
+streamlit

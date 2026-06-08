@@ -17,8 +17,8 @@ class SpeechRecognizer:
         self.recognizer.dynamic_energy_threshold = True
         self.recognizer.dynamic_energy_adjustment_damping = 0.15
         self.recognizer.dynamic_energy_ratio = 1.5
-        self.recognizer.pause_threshold = 2.0 # Wait 0.8s before ending phrase
-        self.recognizer.non_speaking_duration = 1.5
+        self.recognizer.pause_threshold = 4.0 # Give user plenty of time to pause and think
+        self.recognizer.non_speaking_duration = 2.5
 
     def calibrate(self):
         """Creates a fresh noise profile for the room."""

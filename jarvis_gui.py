@@ -1,4 +1,9 @@
 import sys
+try:
+    sys.stdout.reconfigure(encoding='utf-8')
+    sys.stderr.reconfigure(encoding='utf-8')
+except AttributeError:
+    pass
 import os
 from jarvis import JARVIS
 import json
@@ -122,7 +127,7 @@ class JarvisThread(QThread):
         self.state_signal.emit("talking")
         
         # 1. CHECK FOR IMAGE TAGS (Regex)
-        image_pattern = r"\[(?:SIMPLE_IMAGE_REQUEST|Image of).*?:?\s*(.*?)\]"
+        image_pattern = r"\[(?:SIMPLE_IMAGE_REQUEST|Image of|IMAGE).*?:?\s*(.*?)\]"
         match = re.search(image_pattern, text, re.IGNORECASE)
         
         clean_text = text

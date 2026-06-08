@@ -14,7 +14,7 @@ cd /d "C:\Users\DELL\OneDrive\Desktop\assistent"
 
 :: 3. Run Jarvis
 echo [SYSTEM] Awakening Jarvis...
-python jarvis_gui.py
+uv run jarvis_gui.py
 
 :: 4. Keep window open if it crashes (so you can see why)
 echo [CRASH DETECTED] Jarvis stopped. Read the error above.

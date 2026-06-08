@@ -1,3 +1,3 @@
 @echo off
 cd /d "%~dp0"
-python -m streamlit run dashboard.py --server.headless true
+uv run streamlit run dashboard.py --server.headless true

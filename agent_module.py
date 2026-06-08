@@ -1,3 +1,9 @@
+import sys
+try:
+    sys.stdout.reconfigure(encoding='utf-8')
+    sys.stderr.reconfigure(encoding='utf-8')
+except AttributeError:
+    pass
 import os
 import time
 import subprocess
@@ -126,13 +132,11 @@ class RecorderAgent:
                     ret, frame = cap.read()
                     if ret:
                         out.write(frame)
-                        cv2.imshow('JARVIS VIDEO FEED', frame)
-                        if cv2.waitKey(1) & 0xFF == ord('q'): break
+                        time.sleep(0.01) # Small sleep to prevent CPU hogging
                     else: break
             finally:
                 cap.release()
                 out.release()
-                cv2.destroyAllWindows()
                 print(f"✅ Video Saved: {filepath}")
 
         threading.Thread(target=record_thread).start()
@@ -368,7 +372,7 @@ class MemoryAgent:
         try:
             import subprocess
             res = subprocess.run(
-                ["python", "-c", "import torch; import chromadb; print('OK')"],
+                [sys.executable, "-c", "import torch; import chromadb; print('OK')"],
                 capture_output=True,
                 text=True,
                 timeout=3.0
@@ -434,7 +438,7 @@ class ProjectAgent:
         self.project_path = None
         self.server_process = None
         # Base directory for all projects
-        self.base_dir = os.path.join(os.environ['USERPROFILE'], 'OneDrive', 'Desktop', 'JARVIS_Projects')
+        self.base_dir = os.path.join(os.environ['USERPROFILE'], 'OneDrive', 'Desktop', 'PROJECTS')
         if not os.path.exists(self.base_dir): os.makedirs(self.base_dir)
 
     def _log(self, log_type, message):
@@ -585,13 +589,26 @@ class ProjectAgent:
         """
         self._log("task", "Designing architecture: full-stack enterprise blueprint...")
         
+        import random
+        aesthetics = [
+            "Modern warm/earthy theme, cozy color scheme tailored to the topic, rounded-3xl cards, sleek typography using 'Plus Jakarta Sans', dynamic gradient texts, clean minimal structure.",
+            "Neo-Brutalism style: high-contrast layout, thick black borders (border-4 border-black), harsh drop shadows (shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]), vibrant bold color fills tailored to the theme, monospace headings using 'Share Tech Mono'.",
+            "Cyberpunk Neon style: dark slate/black backgrounds, bright cyan or neon pink outlines, sharp box corners, simulated neon glow effects, tech grid lines, 'Orbitron' or monospace fonts.",
+            "Minimalist Obsidian style: ultra-premium dark theme, charcoal/obsidian cards, gold/amber borders and text accents, elegant serif headers using 'Playfair Display', generous white space, luxury minimal design.",
+            "Glassmorphism styling: frosted-glass transparency effects (backdrop-blur-md bg-white/10), soft pastel gradients, neon glow accents, soft rounded-2xl panels, modern sans-serif typography like 'Outfit'.",
+            "Synthwave Retro Sunset: purple-to-pink gradient panels, warm amber glowing headlines, retro badges, synthwave sunset visual aesthetics, typography using 'Montserrat'.",
+            "Emerald Matrix/Terminal: dark slate/green theme, monospace hacker/tech fonts, dashed/dotted border highlights, digital status readouts, clean compact terminal interfaces."
+        ]
+        chosen_aesthetic = random.choice(aesthetics)
+        self._log("task", f"Injecting randomized frontend design archetype: {chosen_aesthetic.split(':')[0]}")
+        
         system_prompt = f"""
         Act as a "God Mode" Full-Stack Developer.
         Project: {locked_reqs}
         
         --- FRONTEND RULES (GOOGLE STITCH MODE) ---
         1. UI LIBRARY: Tailwind CSS (via CDN). NO raw CSS files.
-        2. AESTHETIC: Modern, clean, warm color scheme tailored to the topic, rounded-xl cards, beautiful typography (Inter font), soft shadows.
+        2. AESTHETIC: {chosen_aesthetic}
         3. LAYOUT: Responsive Grid/Flexbox with navbar, hero section, dynamic menu/products, and locations.
         4. ICONS: FontAwesome CDN.
         
@@ -801,7 +818,7 @@ class ProjectAgent:
         if not os.path.exists(db_path):
             self._log("task", "Database site.db not found. Seeding SQLite tables...")
             seed_cmd = "from app import create_app, db; app = create_app(); app.app_context().push(); db.create_all()"
-            subprocess.run(f"cd {self.project_path} && python -c \"{seed_cmd}\"", shell=True)
+            subprocess.run(f'cd {self.project_path} && "{sys.executable}" -c "{seed_cmd}"', shell=True)
 
         # 3. Launch Server (redirect stdout/stderr to a log file to avoid subprocess pipe buffer locks)
         log_file_path = os.path.join(self.project_path, "flask_server.log")
@@ -812,7 +829,7 @@ class ProjectAgent:
             self.server_log_file = subprocess.DEVNULL
 
         self.server_process = subprocess.Popen(
-            ["python", "run.py"],
+            [sys.executable, "run.py"],
             cwd=self.project_path,
             stdout=self.server_log_file,
             stderr=self.server_log_file,
