@@ -52,21 +52,21 @@ sequenceDiagram
     participant S as Flask Server
     participant L as Telemetry / Log file
     
-    J->&gt;P: Check if Port 5000 is occupied
+    J->>P: Check if Port 5000 is occupied
     alt Port occupied
-        P->&gt;J: Lingering PID found
-        J->&gt;J: Terminate process tree using psutil
+        P->>J: Lingering PID found
+        J->>J: Terminate process tree using psutil
     end
-    J->&gt;S: Boot "run.py" using sys.executable
-    S->&gt;L: Redirect stdout/stderr to log file
+    J->>S: Boot "run.py" using sys.executable
+    S->>L: Redirect stdout/stderr to log file
     alt Server Crashes (5s window)
-        L->&gt;J: Read crash log traceback
-        J->&gt;J: Parse implicated python files
-        J->&gt;J: Call LLM Self-Healing Model for surgical code fixes
-        J->&gt;J: Write fixed files to workspace
-        J->&gt;S: Restart Flask server
+        L->>J: Read crash log traceback
+        J->>J: Parse implicated python files
+        J->>J: Call LLM Self-Healing Model for surgical code fixes
+        J->>J: Write fixed files to workspace
+        J->>S: Restart Flask server
     else Server Healthy
-        J->&gt;User: Announce "Server online on http://127.0.0.1:5000"
+        J->>User: Announce "Server online on http://127.0.0.1:5000"
     end
 ```
 
