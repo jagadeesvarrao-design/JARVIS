@@ -5,6 +5,7 @@ import keyboard
 import webbrowser
 import pywhatkit
 import ctypes # ✨ NEW: Required for Window Sensor
+import pywinauto
 
 class ApplicationController:
     def __init__(self):
@@ -20,6 +21,63 @@ class ApplicationController:
         buff = ctypes.create_unicode_buffer(length + 1)
         ctypes.windll.user32.GetWindowTextW(hwnd, buff, length + 1)
         return buff.value.lower()
+
+    def get_open_windows(self):
+        """Returns titles of all currently open and visible windows using pywinauto"""
+        try:
+            from pywinauto import Desktop
+            windows = Desktop(backend="uia").windows()
+            titles = []
+            for w in windows:
+                try:
+                    title = w.window_text()
+                    if w.is_visible() and title and len(title.strip()) > 0:
+                        if title not in titles:
+                            titles.append(title)
+                except:
+                    continue
+            return titles
+        except Exception as e:
+            print(f"Error listing windows: {e}")
+            return []
+
+    def activate_window(self, app_name):
+        """Locates an open window by name and brings it to the foreground"""
+        print(f"🔍 Searching for window matching: '{app_name}'")
+        try:
+            from pywinauto import Desktop
+            windows = Desktop(backend="uia").windows()
+            for w in windows:
+                try:
+                    title = w.window_text()
+                    if app_name.lower() in title.lower() and w.is_visible():
+                        print(f"🎯 Found window: '{title}'. Activating...")
+                        w.set_focus()
+                        return f"Activated window '{title}'."
+                except:
+                    continue
+            return f"Could not find any open window matching '{app_name}'."
+        except Exception as e:
+            return f"Error activating window: {e}"
+
+    def close_window_gracefully(self, app_name):
+        """Locates an open window by name and closes it gracefully"""
+        print(f"❌ Closing window matching: '{app_name}'")
+        try:
+            from pywinauto import Desktop
+            windows = Desktop(backend="uia").windows()
+            for w in windows:
+                try:
+                    title = w.window_text()
+                    if app_name.lower() in title.lower() and w.is_visible():
+                        print(f"🎯 Closing window: '{title}'")
+                        w.close()
+                        return f"Closed window '{title}' gracefully."
+                except:
+                    continue
+            return f"Could not find any open window matching '{app_name}'."
+        except Exception as e:
+            return f"Error closing window: {e}"
 
     # =================================================================
     # 1. SMART APP MANAGEMENT (Open/Close)
@@ -60,7 +118,7 @@ class ApplicationController:
             return f"Attempting to launch {app_name}."
 
     def close_app(self, command):
-        """Smart Closing: Distinguishes between Browser Tabs and Apps"""
+        """Smart Closing: Distinguishes between Browser Tabs and Apps, uses pywinauto graceful close first"""
         app_name = command.replace("close", "").strip().lower()
         print(f"❌ Closing: {app_name}")
 
@@ -70,7 +128,12 @@ class ApplicationController:
             pyautogui.hotkey('ctrl', 'w')
             return f"Closed tab for {app_name}."
 
-        # 2. SYSTEM APPS (Safety Fix)
+        # 2. Try pywinauto graceful close
+        res = self.close_window_gracefully(app_name)
+        if "Closed window" in res:
+            return res
+
+        # 3. SYSTEM APPS (Safety Fix)
         if "code" in app_name or "visual studio" in app_name:
             os.system("taskkill /f /im Code.exe")
             return "Closed VS Code."
@@ -128,9 +191,24 @@ class ApplicationController:
 
     def type_text(self, text):
         clean_text = text.replace("write", "").replace("type", "").strip()
-        time.sleep(1) # Buffer to let you switch windows
-        pyautogui.write(clean_text, interval=0.05) 
-        return "Typed."
+        time.sleep(1.0) # Buffer to let you switch windows
+        try:
+            from pywinauto.keyboard import send_keys
+            # Escape braces which have special meaning in pywinauto send_keys
+            escaped_text = ""
+            for char in clean_text:
+                if char == '{':
+                    escaped_text += '{{}'
+                elif char == '}':
+                    escaped_text += '{}}'
+                else:
+                    escaped_text += char
+            send_keys(escaped_text, with_spaces=True)
+            return "Typed using pywinauto."
+        except Exception as e:
+            print(f"pywinauto typing failed: {e}. Falling back to pyautogui.")
+            pyautogui.write(clean_text, interval=0.05) 
+            return "Typed using pyautogui fallback."
 
     # =================================================================
     # 3. MEDIA CONTROLS

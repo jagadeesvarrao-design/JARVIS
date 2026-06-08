@@ -132,12 +132,9 @@ class ProactiveAgent:
                     if elapsed > 10: 
                         print("👁️ [VISION DEBUG]: Time limit reached. Generating vocal alert...")
                         detail_prompt = "What is the specific error message shown in this screenshot?"
-                        error_detail = self.brain.client.models.generate_content(
-                            model=self.brain.models[0],
-                            contents=[img, detail_prompt]
-                        ).text.strip()
+                        error_detail = self._call_vision_api(img, detail_prompt)
                         
-                        if error_detail != self.last_analyzed_error:
+                        if error_detail and error_detail != self.last_analyzed_error:
                             self.last_analyzed_error = error_detail
                             self.error_start_time = None # Reset timer
                             return "Sir, I notice you are stuck on a syntax error. Would you like me to analyze the screen and suggest a fix?"

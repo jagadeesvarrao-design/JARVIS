@@ -34,8 +34,9 @@ missing = []
 for m in modules:
     if m not in sys.builtin_module_names and not is_stdlib(m):
         try:
-            importlib.import_module(m)
-        except ImportError:
+            if importlib.util.find_spec(m) is None:
+                missing.append(m)
+        except Exception:
             missing.append(m)
 
 print("MISSING_MODULES:", missing)

@@ -370,17 +370,21 @@ class MemoryAgent:
         # Windows-Safe PyTorch DLL Integrity Check via Subprocess Timeout
         pytorch_working = False
         try:
-            import subprocess
-            res = subprocess.run(
-                [sys.executable, "-c", "import torch; import chromadb; print('OK')"],
-                capture_output=True,
-                text=True,
-                timeout=3.0
-            )
-            if res.returncode == 0 and "OK" in res.stdout:
-                pytorch_working = True
+            import importlib.util
+            if importlib.util.find_spec("torch") is not None and importlib.util.find_spec("chromadb") is not None:
+                import subprocess
+                res = subprocess.run(
+                    [sys.executable, "-c", "import torch; import chromadb; print('OK')"],
+                    capture_output=True,
+                    text=True,
+                    timeout=3.0
+                )
+                if res.returncode == 0 and "OK" in res.stdout:
+                    pytorch_working = True
+                else:
+                    print("⚠️ PyTorch dynamic DLL load check failed in subprocess. Bypassing ChromaDB.")
+                    pytorch_working = False
             else:
-                print("⚠️ PyTorch dynamic DLL load check failed in subprocess. Bypassing ChromaDB.")
                 pytorch_working = False
         except subprocess.TimeoutExpired:
             print("⚠️ PyTorch Import Timeout: Subprocess hung due to DLL loader lock. Gracefully bypassing ChromaDB.")
@@ -813,12 +817,30 @@ class ProjectAgent:
 
         self._log("task", "Initializing Enterprise Server...")
         
+        # 1.5 Setup Sandbox Virtual Environment if not exists
+        venv_dir = os.path.join(self.project_path, ".venv")
+        if os.name == "nt":
+            venv_python = os.path.join(venv_dir, "Scripts", "python.exe")
+        else:
+            venv_python = os.path.join(venv_dir, "bin", "python")
+            
+        if not os.path.exists(venv_dir) or not os.path.exists(venv_python):
+            self._log("task", "Setting up isolated virtual environment sandbox...")
+            subprocess.run([sys.executable, "-m", "venv", ".venv"], cwd=self.project_path)
+            
+            # Install dependencies in the sandbox
+            req_file = os.path.join(self.project_path, "requirements.txt")
+            if os.path.exists(req_file):
+                self._log("task", "Installing project dependencies in sandbox (this may take a moment)...")
+                # Use pip inside venv to install requirements
+                subprocess.run([venv_python, "-m", "pip", "install", "-r", "requirements.txt"], cwd=self.project_path)
+        
         # 2. Database Seed (Enterprise Style)
         db_path = os.path.join(self.project_path, "instance", "site.db")
         if not os.path.exists(db_path):
-            self._log("task", "Database site.db not found. Seeding SQLite tables...")
+            self._log("task", "Database site.db not found. Seeding SQLite tables in sandbox...")
             seed_cmd = "from app import create_app, db; app = create_app(); app.app_context().push(); db.create_all()"
-            subprocess.run(f'cd {self.project_path} && "{sys.executable}" -c "{seed_cmd}"', shell=True)
+            subprocess.run(f'cd "{self.project_path}" && "{venv_python}" -c "{seed_cmd}"', shell=True)
 
         # 3. Launch Server (redirect stdout/stderr to a log file to avoid subprocess pipe buffer locks)
         log_file_path = os.path.join(self.project_path, "flask_server.log")
@@ -829,7 +851,7 @@ class ProjectAgent:
             self.server_log_file = subprocess.DEVNULL
 
         self.server_process = subprocess.Popen(
-            [sys.executable, "run.py"],
+            [venv_python, "run.py"],
             cwd=self.project_path,
             stdout=self.server_log_file,
             stderr=self.server_log_file,
@@ -1236,3 +1258,149 @@ class GeneralistAgent:
             return "Task completed via Interpreter."
         except Exception as e:
             return f"Interpreter Error: {e}"
+
+# =========================================================================
+# 🌐 NEW CLASS: BROWSER AGENT (Playwright-Based Autonomous Web Agent)
+# =========================================================================
+class BrowserAgent:
+    def __init__(self):
+        print("🌐 Initializing Autonomous Browser Agent...")
+        
+    def execute_goal(self, goal, log_callback=None):
+        """Runs the Playwright browser autonomously to achieve the user's goal"""
+        def log(msg):
+            print(f"🌐 [BrowserAgent]: {msg}")
+            if log_callback:
+                log_callback(msg)
+                
+        log(f"Starting browser automation for goal: '{goal}'")
+        
+        from playwright.sync_api import sync_playwright
+        import json
+        
+        result = "Goal not accomplished."
+        
+        try:
+            with sync_playwright() as p:
+                log("Launching Chromium browser...")
+                browser = p.chromium.launch(headless=False, args=["--start-maximized"])
+                context = browser.new_context(viewport=None)
+                page = context.new_page()
+                
+                log("Navigating to start page...")
+                page.goto("https://www.google.com")
+                page.wait_for_load_state("networkidle")
+                
+                step = 0
+                max_steps = 10
+                
+                while step < max_steps:
+                    step += 1
+                    current_url = page.url
+                    try:
+                        visible_text = page.evaluate("() => document.body.innerText")
+                    except:
+                        visible_text = "Page content empty or loading."
+                        
+                    log(f"Step {step}/{max_steps} | URL: {current_url}")
+                    
+                    prompt = f"""
+                    You are an autonomous web-browsing agent controlling a Playwright browser.
+                    Your ultimate goal is: "{goal}"
+                    
+                    CURRENT PAGE INFO:
+                    URL: {current_url}
+                    VISIBLE TEXT ON PAGE (TRUNCATED):
+                    {visible_text[:4000]}
+                    
+                    Choose the next single action to move closer to the goal.
+                    Choose from one of these actions:
+                    1. GOTO: Navigate to a URL. target = complete URL.
+                    2. CLICK: Click a link, button, or input field. target = selector (like text "Search", "a.post-title", "input[name='q']").
+                    3. TYPE: Type text into a focused input field. target = selector, text = content to type.
+                    4. WAIT: Wait for a short duration. text = number of seconds to wait.
+                    5. ANSWER: You have gathered enough information to answer the user's goal. text = your final answer to the user.
+                    
+                    Format your response in VALID JSON matching this structure:
+                    {{
+                        "action": "GOTO" | "CLICK" | "TYPE" | "WAIT" | "ANSWER",
+                        "target": "selector_or_url_here",
+                        "text": "text_content_to_type_or_wait_time_or_final_answer",
+                        "thought": "brief explanation of your reasoning"
+                    }}
+                    
+                    Return JSON ONLY. No markdown wrapping. No formatting.
+                    """
+                    
+                    try:
+                        raw_res = model.generate_content(prompt).text
+                        import re
+                        json_match = re.search(r'(\{[\s\S]*\})', raw_res)
+                        if json_match:
+                            action_data = json.loads(json_match.group(1))
+                        else:
+                            action_data = json.loads(raw_res.strip())
+                    except Exception as le:
+                        log(f"Error parsing agent decision: {le}. Retrying simple prompt...")
+                        prompt_backup = prompt + "\nRespond with standard raw JSON without code blocks."
+                        try:
+                            raw_res = model.generate_content(prompt_backup).text
+                            clean_res = raw_res.replace("```json", "").replace("```", "").strip()
+                            action_data = json.loads(clean_res)
+                        except Exception as le2:
+                            log(f"Fallback parse failed: {le2}")
+                            break
+                        
+                    action = action_data.get("action", "").upper()
+                    target = action_data.get("target", "")
+                    action_text = action_data.get("text", "")
+                    thought = action_data.get("thought", "")
+                    
+                    log(f"Thought: {thought}")
+                    log(f"Action: {action} | Target: {target} | Text: {action_text}")
+                    
+                    if action == "GOTO":
+                        page.goto(target)
+                        page.wait_for_load_state("load")
+                    elif action == "CLICK":
+                        try:
+                            page.click(target, timeout=5000)
+                        except:
+                            try:
+                                page.click(f"text={target}", timeout=5000)
+                            except Exception as ce:
+                                log(f"Failed to click: {ce}")
+                    elif action == "TYPE":
+                        try:
+                            page.click(target, timeout=5000)
+                            page.fill(target, action_text)
+                        except:
+                            try:
+                                page.click(f"text={target}", timeout=5000)
+                                page.fill(f"text={target}", action_text)
+                            except:
+                                try:
+                                    page.keyboard.type(action_text)
+                                except Exception as te:
+                                    log(f"Failed to type: {te}")
+                    elif action == "WAIT":
+                        try:
+                            wait_sec = float(action_text)
+                            time.sleep(wait_sec)
+                        except:
+                            time.sleep(2)
+                    elif action == "ANSWER":
+                        result = action_text
+                        log("Goal achieved!")
+                        break
+                    else:
+                        log(f"Unknown action: {action}")
+                        
+                    time.sleep(1.0)
+                    
+                browser.close()
+        except Exception as e:
+            log(f"Browser crash error: {e}")
+            result = f"Failed to complete goal: {e}"
+            
+        return result

@@ -96,6 +96,11 @@ Includes a background-threaded `RecorderAgent` capable of running video capture,
 * **Email Suite**: Drafts emails, launches file-picker dialogs for attachments, and sends them via SMTP SSL.
 * **WhatsApp Linker**: Automatically targets numbers, encodes messages, and opens the native Windows WhatsApp app to send.
 
+### ⚡ Performance, Diagnostics & Atomic Telemetry
+* **Atomic Logs Database**: Employs atomic write transactions (`os.replace`) to prevent concurrency locks or JSON database corruption between the PyQt5 HUD threads, Proactive Monitor daemon, and the Streamlit dashboard server.
+* **Fast Path Detection**: Dynamic `find_spec` scans bypass slow subprocess checks for optional heavy dependencies (e.g. PyTorch, ChromaDB, Silero VAD) on environments where they are not installed, maintaining instant start times.
+* **API Key Pool Diagnostics**: Includes `fix_my_key.py` to recursively test connectivity, listing active generative model access scopes for each key in `config.API_KEYS_POOL`.
+
 ---
 
 ## 📂 Project Structure
@@ -104,12 +109,15 @@ Includes a background-threaded `RecorderAgent` capable of running video capture,
 assistent/
 │
 ├── jarvis.py              # Main Orchestration Loop (The CEO)
-├── agent_module.py        # Workers: MemoryAgent, NewsAgent, ProjectAgent, DocumentAgent
+├── jarvis_gui.py          # PyQt5 HUD Dashboard & User Interface Overlay
+├── agent_module.py        # Workers: MemoryAgent, NewsAgent, ProjectAgent, BrowserAgent
 ├── ai_module.py           # Model Wrapper & Google GenAI API Router
 ├── speech_module.py       # SpeechRecognition & Voice Inputs
-├── automation_module.py   # Windows UI Automation (pyautogui & win32com)
+├── automation_module.py   # Windows UI Automation (pywinauto, pyautogui)
 ├── contact_module.py      # Contact directory & phone/email lookups
 ├── config.py              # System Settings & API keys pool configuration
+├── fix_my_key.py          # API Key Pools Diagnostics Tool
+├── check_deps.py          # System Dependency Audit Script
 ├── wakeup_jarvis.bat      # Startup sequence bootloader
 └── requirements.txt       # Project Dependencies
 ```

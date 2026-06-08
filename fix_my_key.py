@@ -8,48 +8,33 @@ import google.generativeai as genai
 import config
 import os
 
-print("\n--- 🔍 DIAGNOSTIC START ---")
+print("\n--- 🔍 JARVIS API KEY DIAGNOSTICS START ---")
 
-# 1. Check API Key presence
-if not config.API_KEY:
-    print("❌ ERROR: API Key is missing in config.py")
-    exit()
-print(f"🔑 Key found: {config.API_KEY[:5]}... (Hidden)")
+if not hasattr(config, "API_KEYS_POOL") or not config.API_KEYS_POOL:
+    print("❌ ERROR: API_KEYS_POOL is missing or empty in config.py")
+    sys.exit(1)
 
-# 2. Configure
-try:
-    genai.configure(api_key=config.API_KEY)
-    print("✅ Library configured.")
-except Exception as e:
-    print(f"❌ Configuration Error: {e}")
-    exit()
+print(f"🔑 Found {len(config.API_KEYS_POOL)} key(s) in API_KEYS_POOL.")
 
-# 3. Test Connection & Find Working Models
-print("\n📡 Testing connection to Google...")
-working_model = None
+for i, api_key in enumerate(config.API_KEYS_POOL):
+    print(f"\n--- Checking Key #{i+1} ({api_key[:5]}...{api_key[-3:] if len(api_key) > 8 else ''}) ---")
+    try:
+        genai.configure(api_key=api_key)
+        
+        # Test the key by listing models
+        available_models = []
+        for m in genai.list_models():
+            if 'generateContent' in m.supported_generation_methods:
+                available_models.append(m.name)
+                
+        if available_models:
+            print(f"✅ Key #{i+1} is active and functional!")
+            best_model = next((m for m in available_models if "flash" in m), available_models[0])
+            print(f"👉 Recommended Model: {best_model.replace('models/', '')}")
+        else:
+            print(f"⚠️ Key #{i+1} connected successfully, but returned NO generation models.")
+            
+    except Exception as e:
+        print(f"❌ Key #{i+1} failed verification: {e}")
 
-try:
-    # We ask Google: "What models can I use?"
-    print("📋 Listing available models...")
-    for m in genai.list_models():
-        if 'generateContent' in m.supported_generation_methods:
-            print(f"   - Found: {m.name}")
-            # We prefer Flash, but will accept Pro if that's all you have
-            if 'flash' in m.name and '1.5' in m.name:
-                working_model = m.name
-            elif 'pro' in m.name and not working_model:
-                working_model = m.name
-
-    if working_model:
-        print(f"\n🎉 SUCCESS! Your key works. The best available model is: {working_model}")
-        print(f"👉 ACTION: Go to config.py and change AI_MODEL to: '{working_model}'")
-    else:
-        print("\n⚠️ ISSUE: Connection successful, but NO text generation models were found.")
-        print("   This usually means your API Key is restricted or the project has no billing/free-tier enabled.")
-
-except Exception as e:
-    print(f"\n❌ FATAL ERROR: {e}")
-    print("👉 SOLUTION: Your API Key is likely blocked or invalid.")
-    print("   Please generate a NEW key at: https://aistudio.google.com/app/apikey")
-
-print("\n--- DIAGNOSTIC END ---")
+print("\n--- DIAGNOSTICS END ---")

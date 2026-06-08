@@ -8,7 +8,8 @@ class SpeechRecognizer:
         self.microphone = sr.Microphone(sample_rate=16000, chunk_size=512)
         
         # --- 🧠 NEURAL EAR CONFIG (No Compiler Needed) ---
-        self.has_neural_ear = True  # Enable VAD mode, will lazy-load on first listen
+        import importlib.util
+        self.has_neural_ear = importlib.util.find_spec("torch") is not None
         self.model = None
         self.get_speech_timestamps = None
 

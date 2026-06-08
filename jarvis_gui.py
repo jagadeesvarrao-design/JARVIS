@@ -88,8 +88,13 @@ def log_to_dashboard(type, message):
     # Keep only last 50 logs to prevent lag
     if len(data) > 50: data = data[-50:]
         
-    with open(log_file, "w") as f:
-        json.dump(data, f, indent=4)
+    tmp_file = log_file + ".tmp"
+    try:
+        with open(tmp_file, "w") as f:
+            json.dump(data, f, indent=4)
+        os.replace(tmp_file, log_file)
+    except Exception as e:
+        print(f"Error writing dashboard log: {e}")
 
 # ========================================================
 # 🔧 WORKER THREAD (Backend Connection + Audio Fix)

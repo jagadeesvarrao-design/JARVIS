@@ -25,6 +25,8 @@ import urllib.parse
 import re
 import atexit
 import threading
+import asyncio
+import edge_tts
 # Import Custom Modules
 import config
 from speech_module import SpeechRecognizer
@@ -39,6 +41,11 @@ from proactive_module import ProactiveAgent
 
 # Create the queue
 voice_queue = queue.Queue()
+stop_speech_event = threading.Event()
+
+# SAPI Constants
+SVSFlagsAsync = 1
+SVSFPurgeBeforeSpeak = 2
 
 # The dedicated voice-only worker
 def voice_worker():
@@ -52,11 +59,95 @@ def voice_worker():
         text = voice_queue.get()
         if text is None: break
         
+        if stop_speech_event.is_set():
+            voice_queue.task_done()
+            stop_speech_event.clear()
+            continue
+            
+        temp_file = f"speech_temp_{int(time.time())}.mp3"
+        success = False
         try:
-            # This is naturally blocking, so no runAndWait() is needed!
-            speaker.Speak(text) 
+            # Generate Edge TTS voice file
+            async def run_tts():
+                voice = getattr(config, "TTS_VOICE", "en-US-GuyNeural")
+                communicate = edge_tts.Communicate(text, voice)
+                await communicate.save(temp_file)
+            
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            loop.run_until_complete(run_tts())
+            loop.close()
+            success = True
         except Exception as e:
-            print(f"❌ Direct Audio Error: {e}")
+            print(f"⚠️ Edge TTS failed: {e}. Falling back to SAPI.")
+            success = False
+            
+        if success and os.path.exists(temp_file):
+            try:
+                # Play using WMPlayer.OCX
+                player = win32com.client.Dispatch("WMPlayer.OCX")
+                player.URL = os.path.abspath(temp_file)
+                player.controls.play()
+                
+                # Wait for player to start playing
+                start_time = time.time()
+                while player.playState != 3: # 3 = Playing
+                    pythoncom.PumpWaitingMessages()
+                    time.sleep(0.02)
+                    if stop_speech_event.is_set():
+                        player.controls.stop()
+                        break
+                    if time.time() - start_time > 4.0:
+                        if player.playState in [1, 8, 10]:
+                            break
+                        player.controls.play()
+                        
+                # Wait until completed
+                while player.playState == 3:
+                    pythoncom.PumpWaitingMessages()
+                    time.sleep(0.02)
+                    if stop_speech_event.is_set():
+                        player.controls.stop()
+                        break
+                        
+                # Clean up temporary file
+                try:
+                    os.remove(temp_file)
+                except:
+                    pass
+            except Exception as pe:
+                print(f"⚠️ WMPlayer Error: {pe}. Falling back to SAPI.")
+                # Fallback SAPI speech
+                try:
+                    speaker.Speak(text, SVSFlagsAsync)
+                    while not speaker.WaitUntilDone(50):
+                        if stop_speech_event.is_set():
+                            speaker.Speak("", SVSFPurgeBeforeSpeak | SVSFlagsAsync)
+                            break
+                        time.sleep(0.01)
+                except:
+                    pass
+        else:
+            # Fallback SAPI speech
+            try:
+                speaker.Speak(text, SVSFlagsAsync)
+                while not speaker.WaitUntilDone(50):
+                    if stop_speech_event.is_set():
+                        speaker.Speak("", SVSFPurgeBeforeSpeak | SVSFlagsAsync)
+                        break
+                    time.sleep(0.01)
+            except Exception as se:
+                print(f"❌ Fallback voice error: {se}")
+                
+        # Handle post-speech queue clearing if stopped
+        if stop_speech_event.is_set():
+            while not voice_queue.empty():
+                try:
+                    voice_queue.get_nowait()
+                    voice_queue.task_done()
+                except:
+                    break
+            stop_speech_event.clear()
             
         voice_queue.task_done()
 
@@ -78,15 +169,22 @@ def log_to_dashboard(type, message):
     if os.path.exists(log_file):
         try:
             with open(log_file, "r") as f:
-                data = json.load(f)
+                content = f.read().strip()
+                if content:
+                    data = json.loads(content)
         except: pass
         
     data.append(entry)
     
     if len(data) > 50: data = data[-50:]
         
-    with open(log_file, "w") as f:
-        json.dump(data, f, indent=4)
+    tmp_file = log_file + ".tmp"
+    try:
+        with open(tmp_file, "w") as f:
+            json.dump(data, f, indent=4)
+        os.replace(tmp_file, log_file)
+    except Exception as e:
+        print(f"Error writing dashboard log: {e}")
 
 # --- PATH FINDER ---
 def get_desktop_path():
@@ -119,9 +217,24 @@ def find_folder_globally(folder_name):
     
     return None
 
+def record_shutdown():
+    stats_file = "jarvis_startup_stats.json"
+    try:
+        data = {}
+        if os.path.exists(stats_file):
+            with open(stats_file, "r") as f:
+                data = json.load(f)
+        data["last_shutdown_time"] = datetime.datetime.now().isoformat()
+        with open(stats_file, "w") as f:
+            json.dump(data, f, indent=4)
+        print("💾 Recorded shutdown time successfully.")
+    except Exception as e:
+        print(f"⚠️ Error recording shutdown: {e}")
+
 def exit_handler():
     print("🛑 System Shutdown Detected.")
     log_to_dashboard("system", "JARVIS shutting down due to system power off.")
+    record_shutdown()
 
 # Register the exit handler
 atexit.register(exit_handler)
@@ -190,6 +303,185 @@ class JARVIS:
         )
         self._respond(intro)
 
+        # Start tracking and briefing logic
+        stats_file = "jarvis_startup_stats.json"
+        today = datetime.date.today().isoformat()
+        now_str = datetime.datetime.now().isoformat()
+        
+        prev_shutdown = None
+        startup_count = 1
+        
+        try:
+            if os.path.exists(stats_file):
+                with open(stats_file, "r") as f:
+                    data = json.load(f)
+                prev_shutdown = data.get("last_shutdown_time")
+                last_run_date = data.get("last_run_date")
+                if last_run_date == today:
+                    startup_count = data.get("startup_count", 0) + 1
+                else:
+                    startup_count = 1
+            else:
+                data = {}
+                startup_count = 1
+                
+            data["last_run_date"] = today
+            data["startup_count"] = startup_count
+            data["last_startup_time"] = now_str
+            
+            with open(stats_file, "w") as f:
+                json.dump(data, f, indent=4)
+        except Exception as e:
+            print(f"⚠️ Error updating startup stats: {e}")
+
+        # Deliver appropriate briefing
+        if startup_count == 1:
+            self._respond("This is my first startup of the day, Sir. Let me compile a briefing on the latest developments in the AI industry...")
+            sentences = self._fetch_and_compile_briefing()
+            if sentences:
+                self._speak_briefing(sentences)
+        else:
+            print(f"ℹ️ Jarvis startup count for today: {startup_count}")
+            if prev_shutdown:
+                print(f"ℹ️ Checking for AI news since last shutdown: {prev_shutdown}")
+                sentences = self._check_for_big_news_since_shutdown(prev_shutdown)
+                if sentences:
+                    self._respond("Sir, some significant developments have occurred in the AI industry since we last shut down. Here is a quick briefing...")
+                    self._speak_briefing(sentences)
+
+    def _fetch_and_compile_briefing(self):
+        try:
+            from ddgs import DDGS
+            results = []
+            current_year = datetime.datetime.now().year
+            query = f"latest artificial intelligence breakthroughs news {current_year}"
+            
+            print(f"🔍 Searching for AI news with query: '{query}'")
+            with DDGS() as ddgs:
+                results = list(ddgs.text(query, max_results=6))
+                
+            if not results:
+                return ["I was unable to retrieve any recent news from the network."]
+                
+            news_text = "\n".join([f"- {r['title']}: {r['body']}" for r in results])
+            
+            prompt = (
+                "You are Jarvis, a sophisticated and conversational AI assistant. "
+                "Review the following recent AI industry news articles:\n"
+                f"{news_text}\n\n"
+                "Summarize these events in a conversational briefing for your creator. "
+                "Break the briefing down into 4 to 6 clear, distinct sentences. "
+                "Ensure each sentence is on a new line and stands alone as a complete, spoken thought. "
+                "Do not use markdown lists (like bullet points or numbers) or code formatting. Just return the raw sentences, one per line."
+            )
+            
+            response = self.brain.get_response(prompt)
+            sentences = [s.strip() for s in response.split("\n") if s.strip()]
+            return sentences
+        except Exception as e:
+            print(f"Error compiling briefing: {e}")
+            return ["I encountered an error while compiling the AI news update."]
+
+    def _check_for_big_news_since_shutdown(self, prev_shutdown):
+        try:
+            from ddgs import DDGS
+            results = []
+            current_year = datetime.datetime.now().year
+            query = f"latest artificial intelligence breakthroughs news {current_year}"
+            
+            print(f"🔍 Searching for AI news with query: '{query}'")
+            with DDGS() as ddgs:
+                results = list(ddgs.text(query, max_results=6))
+                
+            if not results:
+                return None
+                
+            news_text = "\n".join([f"- {r['title']}: {r['body']}" for r in results])
+            
+            prev_shutdown_dt = datetime.datetime.fromisoformat(prev_shutdown)
+            prev_shutdown_formatted = prev_shutdown_dt.strftime("%Y-%m-%d %H:%M:%S")
+            current_time_formatted = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            
+            prompt = (
+                "You are Jarvis, a sophisticated AI desktop assistant.\n"
+                "Here is the latest AI industry news:\n"
+                f"{news_text}\n\n"
+                f"The user last shut down Jarvis at {prev_shutdown_formatted}. The current time is {current_time_formatted}.\n"
+                "Identify if there is any major, highly significant breakthrough or massive news announcement "
+                "in the AI industry (e.g., a major model release, critical tech acquisition, or significant AI breakthrough) "
+                "that appears to have happened since the last shutdown.\n"
+                "If YES, summarize the major news in 2 to 3 sentences in a conversational way, stating that it happened since the last shutdown. "
+                "Each sentence must be on a new line. Do not use bullet points or code block formatting.\n"
+                "If NO major/groundbreaking news occurred since then, you MUST respond with exactly the single word: NONE."
+            )
+            
+            response = self.brain.get_response(prompt)
+            if response.strip().upper() == "NONE":
+                return None
+                
+            sentences = [s.strip() for s in response.split("\n") if s.strip()]
+            return sentences
+        except Exception as e:
+            print(f"Error checking for big news: {e}")
+            return None
+
+    def _check_for_stop(self):
+        # 1. Keyboard Interrupt (instant and reliable)
+        if keyboard.is_pressed('esc'):
+            print("🛑 Keyboard interrupt detected via ESC.")
+            return True
+            
+        # 2. Voice Interrupt (non-blocking listening check)
+        try:
+            with self.ears.microphone as source:
+                print("👂 [Briefing Active] Checking for stop command...")
+                audio = self.ears.recognizer.listen(source, timeout=0.4, phrase_time_limit=1.2)
+                text = self.ears.recognizer.recognize_google(audio).lower()
+                print(f"👂 Briefing listen heard: '{text}'")
+                if "stop" in text or "cancel" in text or "quiet" in text or "hush" in text:
+                    print("🛑 Voice interrupt detected.")
+                    return True
+        except Exception:
+            pass
+            
+        return False
+
+    def _speak_briefing(self, sentences, start_idx=0):
+        self.pending_briefing = list(sentences)
+        self.briefing_index = start_idx
+        stop_speech_event.clear()
+        
+        while self.briefing_index < len(self.pending_briefing):
+            sentence = self.pending_briefing[self.briefing_index]
+            self._respond(sentence)
+            
+            # Wait for SAPI to finish speaking this sentence, checking for Esc key
+            is_interrupted = False
+            while voice_queue.unfinished_tasks > 0:
+                if keyboard.is_pressed('esc'):
+                    print("🛑 Keyboard interrupt detected via ESC.")
+                    stop_speech_event.set()
+                    is_interrupted = True
+                    break
+                time.sleep(0.05)
+                
+            if is_interrupted:
+                self._respond("Understood, Sir. Pausing the briefing. You can ask me to resume it anytime.")
+                return True
+                
+            self.briefing_index += 1
+            
+            # Check for stop request between sentences
+            if self._check_for_stop():
+                stop_speech_event.set()
+                self._respond("Understood, Sir. Pausing the briefing. You can ask me to resume it anytime.")
+                return True
+                
+        # Reset if fully read
+        self.pending_briefing = None
+        self.briefing_index = 0
+        return False
+
 
         
     def process_command(self, text):
@@ -199,7 +491,27 @@ class JARVIS:
         # 1. Handle Exit
         if "exit" in text or "quit" in text:
             self._respond("Powering down.")
-            os._exit(0)
+            record_shutdown()
+            import sys
+            sys.exit(0)
+            
+        # Handle Briefing Controls
+        if "resume briefing" in text or "continue briefing" in text:
+            if hasattr(self, 'pending_briefing') and self.pending_briefing and self.briefing_index < len(self.pending_briefing):
+                self._respond("Resuming briefing from where we left off...")
+                self._speak_briefing(self.pending_briefing, start_idx=self.briefing_index)
+            else:
+                self._respond("There is no paused briefing to resume, Sir.")
+            return False
+
+        if "tell me the briefing" in text or "start briefing" in text:
+            self._respond("Fetching the latest news to compile a briefing...")
+            sentences = self._fetch_and_compile_briefing()
+            if sentences:
+                self._speak_briefing(sentences)
+            else:
+                self._respond("I could not compile the briefing at this moment.")
+            return False
             
         # 2. Handle Web Search (The Clean Way)
         elif "search" in text or "google" in text or "tell me about" in text:
@@ -636,6 +948,52 @@ class JARVIS:
 
         if "close" in text and "folder" not in text:
             self._respond(self.automation.close_app(text))
+            return False
+
+        # --- Window Focus & Listing (pywinauto Upgrades) ---
+        if "focus window" in text or "activate window" in text or "switch to window" in text:
+            name = text.replace("focus window", "").replace("activate window", "").replace("switch to window", "").strip()
+            if name:
+                msg = self.automation.activate_window(name)
+                self._respond(msg)
+            else:
+                self._respond("Which window should I bring to the front, Sir?")
+            return False
+
+        if "list open windows" in text or "show open windows" in text or "list active windows" in text:
+            self._respond("Scanning the desktop for active windows...")
+            windows = self.automation.get_open_windows()
+            if windows:
+                formatted_list = ", ".join(windows[:10])
+                self._respond(f"Here are the active windows: {formatted_list}")
+            else:
+                self._respond("I couldn't find any visible windows, Sir.")
+            return False
+
+        # --- Autonomous Browser Agent (Web Upgrades) ---
+        if any(w in text for w in ["browse web", "search online for", "autonomous browser", "web agent"]):
+            goal = text.replace("browse web", "").replace("search online for", "").replace("autonomous browser", "").replace("web agent", "").replace("about", "").strip()
+            if not goal:
+                self._respond("What goal would you like me to accomplish on the web, Sir?")
+                goal = self._force_listen()
+                
+            if goal:
+                self._respond(f"Initializing web agent to accomplish goal: '{goal}'. Launching browser...")
+                
+                def run_browser_agent():
+                    from agent_module import BrowserAgent
+                    agent = BrowserAgent()
+                    def log_cb(msg):
+                        try:
+                            from jarvis import log_to_dashboard
+                            log_to_dashboard("system", f"🌐 [BrowserAgent]: {msg}")
+                        except:
+                            pass
+                    
+                    final_answer = agent.execute_goal(goal, log_callback=log_cb)
+                    self._respond(f"Web agent completed the goal. Final response: {final_answer}")
+                    
+                threading.Thread(target=run_browser_agent, daemon=True).start()
             return False
 
         if text.startswith("write") or text.startswith("type"):
