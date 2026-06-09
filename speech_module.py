@@ -9,7 +9,13 @@ class SpeechRecognizer:
         
         # --- 🧠 NEURAL EAR CONFIG (No Compiler Needed) ---
         import importlib.util
-        self.has_neural_ear = importlib.util.find_spec("torch") is not None
+        self.has_neural_ear = False
+        if importlib.util.find_spec("torch") is not None:
+            try:
+                import torch
+                self.has_neural_ear = True
+            except Exception as e:
+                print(f"⚠️ [SPEECH INIT] PyTorch DLL check failed: {e}. Bypassing Neural Ear.")
         self.model = None
         self.get_speech_timestamps = None
 
@@ -82,8 +88,14 @@ class SpeechRecognizer:
                     print(f"🧠 Processing audio (Human Speech Verified)...")
                 else:
                     print(f"👂 Processing audio...")
-                # We use the Google engine but with cleaned, verified audio
-                query = self.recognizer.recognize_google(audio, language='en-in')
+                # We use the Google engine but with cleaned, verified audio with 4-second timeout
+                import socket
+                orig_timeout = socket.getdefaulttimeout()
+                try:
+                    socket.setdefaulttimeout(4.0)
+                    query = self.recognizer.recognize_google(audio, language='en-in')
+                finally:
+                    socket.setdefaulttimeout(orig_timeout)
                 return query.lower()
 
             except sr.WaitTimeoutError:

@@ -44,6 +44,7 @@ from proactive_module import ProactiveAgent
 voice_queue = queue.Queue()
 stop_speech_event = threading.Event()
 speaking_callback = None
+use_edge_tts = True
 
 # SAPI Constants
 SVSFlagsAsync = 1
@@ -66,7 +67,7 @@ def voice_worker():
             stop_speech_event.clear()
             continue
             
-        global speaking_callback
+        global speaking_callback, use_edge_tts
         if speaking_callback:
             try:
                 speaking_callback(True)
@@ -76,21 +77,27 @@ def voice_worker():
         try:
             temp_file = f"speech_temp_{int(time.time())}.mp3"
             success = False
-            try:
-                # Generate Edge TTS voice file
-                async def run_tts():
-                    voice = getattr(config, "TTS_VOICE", "en-US-GuyNeural")
-                    communicate = edge_tts.Communicate(text, voice)
-                    await communicate.save(temp_file)
-                
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                loop.run_until_complete(run_tts())
-                loop.close()
-                success = True
-            except Exception as e:
-                print(f"⚠️ Edge TTS failed: {e}. Falling back to SAPI.")
-                success = False
+            if use_edge_tts:
+                try:
+                    # Generate Edge TTS voice file
+                    async def run_tts():
+                        voice = getattr(config, "TTS_VOICE", "en-US-GuyNeural")
+                        communicate = edge_tts.Communicate(text, voice)
+                        await communicate.save(temp_file)
+                    
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    loop.run_until_complete(asyncio.wait_for(run_tts(), timeout=2.0))
+                    loop.close()
+                    success = True
+                except Exception as e:
+                    print(f"⚠️ Edge TTS failed: {e}. Falling back to SAPI.")
+                    success = False
+                    # Network or resolution errors disable Edge TTS for this session
+                    err_str = str(e).lower()
+                    if "connection" in err_str or "getaddrinfo" in err_str or "timeout" in err_str or "unreachable" in err_str:
+                        print("🌐 [SPEECH SYSTEM]: Network issues detected. Disabling Edge TTS for this session to prevent lagging.")
+                        use_edge_tts = False
                 
             if success and os.path.exists(temp_file):
                 try:
