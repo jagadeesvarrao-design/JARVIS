@@ -21,6 +21,7 @@ class ProactiveAgent:
         self.current_key_index = 0
         self.error_start_time = None
         self.last_analyzed_error = None
+        self.last_cpu_warning_time = 0
         
         schedule.every().day.at("09:00").do(self.morning_briefing)
         schedule.every(30).minutes.do(self.drink_water_reminder)
@@ -36,20 +37,17 @@ class ProactiveAgent:
             print("⚠️ Proactive Module could not reach voice_queue.")
     
     def _call_vision_api(self, img, prompt):
-        """Calls Gemini directly using config.py and auto-rotates your 5 keys on 429 errors."""
-        max_attempts = len(config.API_KEYS_POOL)
+        """Calls Gemini directly using config.py and auto-rotates keys/models on errors."""
+        max_attempts = len(config.API_KEYS_POOL) * len(config.AI_MODELS)
         attempts = 0
+        model_index = 0
         
         while attempts < max_attempts:
             try:
-                # 1. Pull the key and model directly from your config
                 current_key = config.API_KEYS_POOL[self.current_key_index]
-                current_model = config.AI_MODELS[0] # Uses the first model (e.g., gemini-2.5-flash-lite)
+                current_model = config.AI_MODELS[model_index % len(config.AI_MODELS)]
                 
-                # 2. Connect client
                 client = genai.Client(api_key=current_key)
-                
-                # 3. Generate response
                 response = client.models.generate_content(
                     model=current_model,
                     contents=[img, prompt]
@@ -57,17 +55,14 @@ class ProactiveAgent:
                 return response.text.strip()
                 
             except Exception as e:
-                error_str = str(e).upper()
-                # 4. If we hit the rate limit, ROTATE THE KEY instantly
-                if "429" in error_str or "RESOURCE_EXHAUSTED" in error_str:
-                    print(f"⚠️ [VISION LIMIT]: Key #{self.current_key_index + 1} exhausted. Rotating to next key...")
-                    self.current_key_index = (self.current_key_index + 1) % len(config.API_KEYS_POOL)
-                    attempts += 1
-                else:
-                    print(f"❌ [VISION CRASH]: {e}")
-                    return None
+                print(f"⚠️ [VISION TRY FAILED] Key #{self.current_key_index + 1} with model {config.AI_MODELS[model_index % len(config.AI_MODELS)]}: {e}")
+                # Rotate both key and model to find a working combination
+                self.current_key_index = (self.current_key_index + 1) % len(config.API_KEYS_POOL)
+                model_index += 1
+                attempts += 1
+                time.sleep(0.5)
                     
-        print("❌ [CRITICAL]: All API keys in config.py have hit their rate limits.")
+        print("❌ [CRITICAL]: All keys and models exhausted for Vision API.")
         return None
 
     def morning_briefing(self):
@@ -90,7 +85,10 @@ class ProactiveAgent:
         # 2. High CPU Usage (Heavy Load)
         cpu_usage = psutil.cpu_percent(interval=1)
         if cpu_usage > 85:
-            self.speak("Warning. CPU usage is critically high. Cooling protocols recommended.")
+            # Check cooldown (10 minutes = 600 seconds)
+            if time.time() - getattr(self, "last_cpu_warning_time", 0) > 600:
+                self.speak("Warning. CPU usage is critically high. Cooling protocols recommended.")
+                self.last_cpu_warning_time = time.time()
 
     # --- THE NEW PROACTIVE VISION ENGINE (DEBUG MODE) ---
     def _analyze_screen_context(self):

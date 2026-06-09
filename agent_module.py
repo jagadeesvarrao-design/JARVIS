@@ -33,14 +33,15 @@ class MockResponse:
 
 # --- CONFIGURE AI (Rotating Model Wrapper to support API_KEYS_POOL) ---
 class RotatingModel:
-    def __init__(self, model_name):
+    def __init__(self, model_name, fallback_name='gemini-2.5-flash-lite'):
         self.model_name = model_name
+        self.fallback_name = fallback_name
 
     def generate_content(self, contents):
         import google.generativeai as genai
         from config import API_KEYS_POOL
         
-        last_error = None
+        # Try primary model first across all keys
         for i, key in enumerate(API_KEYS_POOL):
             try:
                 genai.configure(api_key=key)
@@ -48,9 +49,21 @@ class RotatingModel:
                 response = m.generate_content(contents)
                 return response
             except Exception as e:
-                last_error = e
-                print(f"⚠️ agent_module: Key #{i+1} failed: {e}. Rotating...")
+                print(f"⚠️ agent_module: Key #{i+1} failed for '{self.model_name}': {e}. Rotating...")
                 continue
+                
+        # If primary failed, try fallback model across all keys
+        if self.fallback_name and self.fallback_name != self.model_name:
+            print(f"🔄 agent_module: Primary model '{self.model_name}' failed. Trying fallback model '{self.fallback_name}'...")
+            for i, key in enumerate(API_KEYS_POOL):
+                try:
+                    genai.configure(api_key=key)
+                    m = genai.GenerativeModel(self.fallback_name)
+                    response = m.generate_content(contents)
+                    return response
+                except Exception as e:
+                    print(f"⚠️ agent_module: Key #{i+1} failed for fallback '{self.fallback_name}': {e}. Rotating...")
+                    continue
                 
         # --- OLLAMA FALLBACK ROUTER ---
         print("⚠️ WARNING: agent_module: Cloud API unreachable. Rerouting to Local Neural Engine (Ollama)...")
@@ -116,11 +129,11 @@ class RotatingModel:
         except Exception as e:
             return MockResponse(f"Local Engine Error: {e}")
 
-# ✅ PRIMARY MODEL: Gemini 2.5 Flash-Lite (Standard for 2026)
-model = RotatingModel('gemini-2.5-flash-lite')
+# ✅ PRIMARY MODEL: Gemini 3.5 Flash (Standard for 2026)
+model = RotatingModel('gemini-3.5-flash', 'gemini-2.5-flash-lite')
 
-# ✅ FALLBACK MODEL: Gemini 2.0 Flash-Lite (Legacy Backup for Timeouts)
-fallback_model = RotatingModel('gemini-2.0-flash-lite')
+# ✅ FALLBACK MODEL: Gemini 2.5 Flash-Lite (Legacy Backup)
+fallback_model = RotatingModel('gemini-2.5-flash-lite', 'gemini-2.5-flash')
 
 def clean_json_loads(s):
     """Robust JSON parser that tolerates unescaped backslashes, trailing commas, and raw control characters from LLMs."""
@@ -438,9 +451,12 @@ class MemoryAgent:
         # Try to resolve DLL directory for torch if on Windows
         try:
             if os.name == 'nt':
-                venv_torch_lib = os.path.join(os.path.dirname(sys.executable), "Lib", "site-packages", "torch", "lib")
-                if os.path.exists(venv_torch_lib):
-                    os.add_dll_directory(venv_torch_lib)
+                import importlib.util
+                spec = importlib.util.find_spec("torch")
+                if spec is not None and spec.submodule_search_locations:
+                    venv_torch_lib = os.path.join(spec.submodule_search_locations[0], "lib")
+                    if os.path.exists(venv_torch_lib):
+                        os.add_dll_directory(venv_torch_lib)
         except Exception:
             pass
 
@@ -452,7 +468,7 @@ class MemoryAgent:
                 import subprocess
                 # Run subprocess with DLL path modification
                 res = subprocess.run(
-                    [sys.executable, "-c", "import os, sys; venv_torch_lib = os.path.join(os.path.dirname(sys.executable), 'Lib', 'site-packages', 'torch', 'lib'); os.add_dll_directory(venv_torch_lib) if os.path.exists(venv_torch_lib) else None; import torch; import chromadb; print('OK')"],
+                    [sys.executable, "-c", "import os, sys, importlib.util; spec = importlib.util.find_spec('torch'); venv_torch_lib = os.path.join(spec.submodule_search_locations[0], 'lib') if spec and spec.submodule_search_locations else None; os.add_dll_directory(venv_torch_lib) if venv_torch_lib and os.path.exists(venv_torch_lib) else None; import torch; import chromadb; print('OK')"],
                     capture_output=True,
                     text=True,
                     timeout=20.0

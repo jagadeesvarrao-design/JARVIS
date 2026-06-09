@@ -1,4 +1,6 @@
 import sys
+import os
+os.environ["CUDA_VISIBLE_DEVICES"] = ""
 # Initialize QApplication first to set up COM in STA mode for PyQt
 from PyQt5.QtWidgets import QApplication
 app = QApplication(sys.argv)
@@ -8,7 +10,6 @@ try:
     sys.stderr.reconfigure(encoding='utf-8')
 except AttributeError:
     pass
-import os
 import json
 import random
 import threading
@@ -114,6 +115,11 @@ class JarvisThread(QThread):
     def run(self):
         # ✨ MAGIC LINE: Audio Permission for Thread
         pythoncom.CoInitialize()
+        
+        # Register voice worker callback
+        import jarvis
+        jarvis.speaking_callback = self.on_speaking_state_changed
+        
         self.jarvis = JARVIS()
         
         # Connect JARVIS functions to GUI
@@ -130,10 +136,15 @@ class JarvisThread(QThread):
         self.jarvis.run()
         pythoncom.CoUninitialize()
 
+    def on_speaking_state_changed(self, is_speaking):
+        """Callback from voice worker thread when speaking starts or stops"""
+        if is_speaking:
+            self.state_signal.emit("talking")
+        else:
+            self.state_signal.emit("idle")
+
     def gui_respond(self, text):
         """Called when JARVIS speaks"""
-        self.state_signal.emit("talking")
-        
         # 1. CHECK FOR IMAGE TAGS (Regex)
         image_pattern = r"\[(?:SIMPLE_IMAGE_REQUEST|Image of|IMAGE).*?:?\s*(.*?)\]"
         match = re.search(image_pattern, text, re.IGNORECASE)
@@ -154,10 +165,14 @@ class JarvisThread(QThread):
         
         # 3. Speak (Clean text only)
         self.original_respond(clean_text)
-        self.state_signal.emit("idle")
 
     def gui_listen(self):
         """Called when JARVIS listens"""
+        try:
+            from jarvis import voice_queue
+            voice_queue.join()
+        except Exception:
+            pass
         self.state_signal.emit("listening")
         return self.original_listen()
     

@@ -1,11 +1,12 @@
 import sys
+import os
+os.environ["CUDA_VISIBLE_DEVICES"] = ""
 try:
     sys.stdout.reconfigure(encoding='utf-8')
     sys.stderr.reconfigure(encoding='utf-8')
 except AttributeError:
     pass
 import speech_recognition as sr
-import os
 import time
 import pyautogui
 import keyboard
@@ -42,6 +43,7 @@ from proactive_module import ProactiveAgent
 # Create the queue
 voice_queue = queue.Queue()
 stop_speech_event = threading.Event()
+speaking_callback = None
 
 # SAPI Constants
 SVSFlagsAsync = 1
@@ -64,59 +66,78 @@ def voice_worker():
             stop_speech_event.clear()
             continue
             
-        temp_file = f"speech_temp_{int(time.time())}.mp3"
-        success = False
-        try:
-            # Generate Edge TTS voice file
-            async def run_tts():
-                voice = getattr(config, "TTS_VOICE", "en-US-GuyNeural")
-                communicate = edge_tts.Communicate(text, voice)
-                await communicate.save(temp_file)
-            
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            loop.run_until_complete(run_tts())
-            loop.close()
-            success = True
-        except Exception as e:
-            print(f"⚠️ Edge TTS failed: {e}. Falling back to SAPI.")
-            success = False
-            
-        if success and os.path.exists(temp_file):
+        global speaking_callback
+        if speaking_callback:
             try:
-                # Play using WMPlayer.OCX
-                player = win32com.client.Dispatch("WMPlayer.OCX")
-                player.URL = os.path.abspath(temp_file)
-                player.controls.play()
+                speaking_callback(True)
+            except Exception:
+                pass
                 
-                # Wait for player to start playing
-                start_time = time.time()
-                while player.playState != 3: # 3 = Playing
-                    pythoncom.PumpWaitingMessages()
-                    time.sleep(0.02)
-                    if stop_speech_event.is_set():
-                        player.controls.stop()
-                        break
-                    if time.time() - start_time > 4.0:
-                        if player.playState in [1, 8, 10]:
-                            break
-                        player.controls.play()
-                        
-                # Wait until completed
-                while player.playState == 3:
-                    pythoncom.PumpWaitingMessages()
-                    time.sleep(0.02)
-                    if stop_speech_event.is_set():
-                        player.controls.stop()
-                        break
-                        
-                # Clean up temporary file
+        try:
+            temp_file = f"speech_temp_{int(time.time())}.mp3"
+            success = False
+            try:
+                # Generate Edge TTS voice file
+                async def run_tts():
+                    voice = getattr(config, "TTS_VOICE", "en-US-GuyNeural")
+                    communicate = edge_tts.Communicate(text, voice)
+                    await communicate.save(temp_file)
+                
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                loop.run_until_complete(run_tts())
+                loop.close()
+                success = True
+            except Exception as e:
+                print(f"⚠️ Edge TTS failed: {e}. Falling back to SAPI.")
+                success = False
+                
+            if success and os.path.exists(temp_file):
                 try:
-                    os.remove(temp_file)
-                except:
-                    pass
-            except Exception as pe:
-                print(f"⚠️ WMPlayer Error: {pe}. Falling back to SAPI.")
+                    # Play using WMPlayer.OCX
+                    player = win32com.client.Dispatch("WMPlayer.OCX")
+                    player.URL = os.path.abspath(temp_file)
+                    player.controls.play()
+                    
+                    # Wait for player to start playing
+                    start_time = time.time()
+                    while player.playState != 3: # 3 = Playing
+                        pythoncom.PumpWaitingMessages()
+                        time.sleep(0.02)
+                        if stop_speech_event.is_set():
+                            player.controls.stop()
+                            break
+                        if time.time() - start_time > 4.0:
+                            if player.playState in [1, 8, 10]:
+                                break
+                            player.controls.play()
+                            
+                    # Wait until completed
+                    while player.playState == 3:
+                        pythoncom.PumpWaitingMessages()
+                        time.sleep(0.02)
+                        if stop_speech_event.is_set():
+                            player.controls.stop()
+                            break
+                            
+                    # Clean up temporary file
+                    try:
+                        os.remove(temp_file)
+                    except:
+                        pass
+                except Exception as pe:
+                    print(f"⚠️ WMPlayer Error: {pe}. Falling back to SAPI.")
+                    # Fallback SAPI speech
+                    try:
+                        speaker.Speak(text, SVSFlagsAsync)
+                        while not speaker.WaitUntilDone(50):
+                            if stop_speech_event.is_set():
+                                speaker.Speak("", SVSFPurgeBeforeSpeak | SVSFlagsAsync)
+                                break
+                            time.sleep(0.01)
+                    except:
+                        pass
+            else:
                 # Fallback SAPI speech
                 try:
                     speaker.Speak(text, SVSFlagsAsync)
@@ -125,20 +146,15 @@ def voice_worker():
                             speaker.Speak("", SVSFPurgeBeforeSpeak | SVSFlagsAsync)
                             break
                         time.sleep(0.01)
-                except:
+                except Exception as se:
+                    print(f"❌ Fallback voice error: {se}")
+        finally:
+            if speaking_callback:
+                try:
+                    speaking_callback(False)
+                except Exception:
                     pass
-        else:
-            # Fallback SAPI speech
-            try:
-                speaker.Speak(text, SVSFlagsAsync)
-                while not speaker.WaitUntilDone(50):
-                    if stop_speech_event.is_set():
-                        speaker.Speak("", SVSFPurgeBeforeSpeak | SVSFlagsAsync)
-                        break
-                    time.sleep(0.01)
-            except Exception as se:
-                print(f"❌ Fallback voice error: {se}")
-                
+                    
         # Handle post-speech queue clearing if stopped
         if stop_speech_event.is_set():
             while not voice_queue.empty():
@@ -263,9 +279,8 @@ class JARVIS:
             
             try:
                 # 1. Log to the GUI dashboard
-                from jarvis_gui import log_to_dashboard
                 log_to_dashboard("jarvis", text)
-            except ImportError:
+            except Exception as e:
                 pass
     def _play_chime(self):  
         try:
@@ -584,15 +599,12 @@ class JARVIS:
         # ==========================================
         # 💻 LEVEL 2: WEBPAGE DESIGNER (LOCAL SINGLE PAGE)
         # ==========================================
-        page_triggers = ["build a webpage", "design a webpage", "create a webpage", "build a page", "design a page", "create a page"]
-        if any(trigger in text for trigger in page_triggers) and "website" not in text:
+        is_page_request = bool(re.search(r'\b(build|create|design|make)\s+(?:an?\s+)?(?!.*\b(?:document|report|file|folder)\b)(?:[a-z0-9_-]+\s+){0,3}(?:webpage|web page|page)\b', text))
+        if is_page_request and "website" not in text and "web site" not in text:
             try:
                 # Extract Topic
-                topic = text
-                for t in page_triggers:
-                    if t in topic:
-                        topic = topic.split(t, 1)[-1]
-                        break
+                match = re.search(r'\b(build|create|design|make)\s+(?:an?\s+)?(?!.*\b(?:document|report|file|folder)\b)(?:[a-z0-9_-]+\s+){0,3}(?:webpage|web page|page)\b', text)
+                topic = text[match.end():].strip()
                 topic = topic.replace("about", "").replace("for", "").strip()
                 if not topic: topic = "JARVIS Interface"
                 
@@ -1201,16 +1213,11 @@ class JARVIS:
         # ==========================================
         # 🏗️  MULTI-AGENT FACTORY (CREWAI INTEGRATION)
         # ==========================================
-        dev_triggers = [
-            "build a website", "create a website", "make a website", "design a website",
-            "build a project", "create a project", "make a project", "design a project",
-            "build website", "create website", "make website", "design website"
-        ]
-        if any(trigger in text for trigger in dev_triggers):
+        is_site_request = bool(re.search(r'\b(build|create|design|make)\s+(?:an?\s+)?(?!.*\b(?:document|report|file|folder)\b)(?:[a-z0-9_-]+\s+){0,3}(?:website|web site|project)\b', text))
+        if is_site_request:
             # STEP 1: INITIATION
-            topic = text
-            for trigger in dev_triggers:
-                topic = topic.replace(trigger, "")
+            match = re.search(r'\b(build|create|design|make)\s+(?:an?\s+)?(?!.*\b(?:document|report|file|folder)\b)(?:[a-z0-9_-]+\s+){0,3}(?:website|web site|project)\b', text)
+            topic = text[match.end():].strip()
             topic = topic.replace("about", "").replace("for", "").replace("a ", "").strip()
             if not topic: topic = "Business"
             

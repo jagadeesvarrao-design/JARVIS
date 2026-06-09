@@ -30,6 +30,10 @@ class AIBrain:
     def _connect_client(self):
         """Connects the client and resets the counter for the new key"""
         try:
+            if not self.api_keys:
+                self.client = None
+                print("❌ Connection Error: No active keys in the pool.")
+                return
             current_key = self.api_keys[self.current_key_index]
             self.client = genai.Client(api_key=current_key)
             self.request_count = 0
@@ -39,6 +43,9 @@ class AIBrain:
 
     def _rotate_key(self):
         """Standard rotation for errors or RPM limits"""
+        if not self.api_keys:
+            self.client = None
+            return
         self.current_key_index = (self.current_key_index + 1) % len(self.api_keys)
         self._connect_client()
 
@@ -106,7 +113,7 @@ class AIBrain:
     # PRIMARY ROUTING LOGIC
     # =================================================================
     def get_response(self, user_text, image_path=None, context=None):
-        if not self.client: 
+        if not self.client or not self.api_keys: 
             # If completely failed to connect to Gemini at boot, force local
             return self._get_ollama_fallback(user_text, context)
 
@@ -162,7 +169,7 @@ class AIBrain:
                 answer = response.text if response.text else "I'm listening."
                 answer = answer.replace("*", "")
                 if "MEMORY:" in answer: answer = answer.split("MEMORY:")[0]
-                answer = re.sub(r'\[(?!Image).*?\]', '', answer).strip()
+                answer = re.sub(r'\[(?!(?i:IMAGE|SIMPLE_IMAGE_REQUEST|Image of)).*?\]', '', answer).strip()
 
                 self.chat_history.append(f"User: {user_text}")
                 self.chat_history.append(f"Jarvis: {answer}")
@@ -195,9 +202,10 @@ class AIBrain:
                     attempt += 1
                     continue
 
-                # 3. Other errors (429 Quota, 503 Overload, 504 Timeout, Connection/Network) -> Rotate Key and retry
-                print(f"⚠️ API Error on Key #{self.current_key_index + 1} ({current_model}): {e}. Rotating to next key...")
+                # 3. Other errors (429 Quota, 503 Overload, 504 Timeout, Connection/Network) -> Rotate Key and Model and retry
+                print(f"⚠️ API Error on Key #{self.current_key_index + 1} ({current_model}): {e}. Rotating key and model...")
                 self._rotate_key()
+                self.current_model_index = (self.current_model_index + 1) % len(self.models)
                 attempt += 1
                 continue
 
