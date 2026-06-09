@@ -27,6 +27,11 @@ from docx.shared import Pt, RGBColor
 import keyboard
 
 # --- CONFIGURE AI (Rotating Model Wrapper to support API_KEYS_POOL) ---
+class MockResponse:
+    def __init__(self, text):
+        self.text = text
+
+# --- CONFIGURE AI (Rotating Model Wrapper to support API_KEYS_POOL) ---
 class RotatingModel:
     def __init__(self, model_name):
         self.model_name = model_name
@@ -46,7 +51,70 @@ class RotatingModel:
                 last_error = e
                 print(f"⚠️ agent_module: Key #{i+1} failed: {e}. Rotating...")
                 continue
-        raise Exception(f"All keys in pool failed. Last error: {last_error}")
+                
+        # --- OLLAMA FALLBACK ROUTER ---
+        print("⚠️ WARNING: agent_module: Cloud API unreachable. Rerouting to Local Neural Engine (Ollama)...")
+        import requests
+        import config
+        import identity
+        
+        # Self-healing model resolution: check what models are available locally
+        url_tags = config.OLLAMA_URL.replace("/api/generate", "/api/tags")
+        resolved_model = config.OLLAMA_MODEL
+        try:
+            tags_resp = requests.get(url_tags, timeout=3.0)
+            if tags_resp.status_code == 200:
+                available_models = [m["name"] for m in tags_resp.json().get("models", [])]
+                if available_models:
+                    model_found = False
+                    for am in available_models:
+                        if resolved_model.lower() in am.lower():
+                            resolved_model = am
+                            model_found = True
+                            break
+                    if not model_found:
+                        resolved_model = available_models[0]
+                        print(f"⚠️ agent_module: Configured model '{config.OLLAMA_MODEL}' not found. Using installed model '{resolved_model}'.")
+                else:
+                    return MockResponse("Sir, no local models are installed in Ollama. Please run 'ollama pull llama3' in your terminal.")
+            else:
+                return MockResponse("My local neural engine (Ollama) is offline or not responding, Sir.")
+        except requests.exceptions.ConnectionError:
+            return MockResponse("Sir, my cloud connection is down and the local Ollama server is not running.")
+        except Exception as te:
+            print(f"⚠️ agent_module: Ollama model list check failed: {te}")
+            pass
+
+        # Extract clean text prompt from contents list or string
+        prompt_str = ""
+        if isinstance(contents, list):
+            for part in contents:
+                if isinstance(part, str):
+                    prompt_str += part + "\n"
+                elif 'PIL' in str(type(part)):
+                    prompt_str += "[Image Context Attached]\n"
+        else:
+            prompt_str = str(contents)
+
+        payload = {
+            "model": resolved_model,
+            "prompt": prompt_str,
+            "stream": False
+        }
+        
+        try:
+            response = requests.post(config.OLLAMA_URL, json=payload, timeout=30)
+            if response.status_code == 200:
+                answer = response.json().get("response", "I could not generate a thought, Sir.")
+                return MockResponse(answer.strip())
+            elif response.status_code == 404:
+                return MockResponse(f"Sir, the model '{resolved_model}' was not found in Ollama. Please download it using 'ollama pull {resolved_model}'.")
+            else:
+                return MockResponse(f"My local neural engine returned error status {response.status_code}, Sir.")
+        except requests.exceptions.ConnectionError:
+            return MockResponse("Sir, my cloud connection is down and the local Ollama server is not running.")
+        except Exception as e:
+            return MockResponse(f"Local Engine Error: {e}")
 
 # ✅ PRIMARY MODEL: Gemini 2.5 Flash-Lite (Standard for 2026)
 model = RotatingModel('gemini-2.5-flash-lite')
@@ -367,14 +435,24 @@ class MemoryAgent:
         
         print("🧠 Initializing Memory Core...")
         
+        # Try to resolve DLL directory for torch if on Windows
+        try:
+            if os.name == 'nt':
+                venv_torch_lib = os.path.join(os.path.dirname(sys.executable), "Lib", "site-packages", "torch", "lib")
+                if os.path.exists(venv_torch_lib):
+                    os.add_dll_directory(venv_torch_lib)
+        except Exception:
+            pass
+
         # Windows-Safe PyTorch DLL Integrity Check via Subprocess Timeout
         pytorch_working = False
         try:
             import importlib.util
             if importlib.util.find_spec("torch") is not None and importlib.util.find_spec("chromadb") is not None:
                 import subprocess
+                # Run subprocess with DLL path modification
                 res = subprocess.run(
-                    [sys.executable, "-c", "import torch; import chromadb; print('OK')"],
+                    [sys.executable, "-c", "import os, sys; venv_torch_lib = os.path.join(os.path.dirname(sys.executable), 'Lib', 'site-packages', 'torch', 'lib'); os.add_dll_directory(venv_torch_lib) if os.path.exists(venv_torch_lib) else None; import torch; import chromadb; print('OK')"],
                     capture_output=True,
                     text=True,
                     timeout=20.0

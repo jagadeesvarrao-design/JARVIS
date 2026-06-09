@@ -1,11 +1,14 @@
 import sys
+# Initialize QApplication first to set up COM in STA mode for PyQt
+from PyQt5.QtWidgets import QApplication
+app = QApplication(sys.argv)
+
 try:
     sys.stdout.reconfigure(encoding='utf-8')
     sys.stderr.reconfigure(encoding='utf-8')
 except AttributeError:
     pass
 import os
-from jarvis import JARVIS
 import json
 import random
 import threading
@@ -14,7 +17,7 @@ import re
 import requests
 import pythoncom
 from proactive_module import ProactiveAgent
-from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, 
+from PyQt5.QtWidgets import (QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, 
                              QLabel, QTextEdit, QPushButton, QDesktopWidget, QDialog, 
                              QLineEdit, QFormLayout, QFileDialog, QMessageBox, QFrame, 
                              QGraphicsOpacityEffect) # Added QGraphicsOpacityEffect
@@ -31,7 +34,7 @@ class HologramPopup(QDialog):
         super().__init__(parent)
         self.setWindowTitle(f"Hologram: {query}")
         self.setFixedSize(600, 400)
-        self.setStyleSheet("background-color: #050505; border: 2px solid cyan;")
+        self.setStyleSheet("background-color: #000000; border: 2px solid #333333;")
         self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
         
         layout = QVBoxLayout(self)
@@ -39,12 +42,12 @@ class HologramPopup(QDialog):
         # Image Label
         self.img_label = QLabel("INITIALIZING HOLOGRAM...")
         self.img_label.setAlignment(Qt.AlignCenter)
-        self.img_label.setStyleSheet("color: cyan; font-family: Consolas; font-size: 14px;")
+        self.img_label.setStyleSheet("color: #ffffff; font-family: Consolas; font-size: 14px;")
         layout.addWidget(self.img_label)
         
         # Close Button
         btn = QPushButton("CLOSE PROJECTION")
-        btn.setStyleSheet("background-color: #004444; color: cyan; font-weight: bold; border: 1px solid cyan;")
+        btn.setStyleSheet("background-color: #222222; color: #ffffff; font-weight: bold; border: 1px solid #444444;")
         btn.clicked.connect(self.close)
         layout.addWidget(btn)
         
@@ -181,7 +184,7 @@ class FaceWidget(QWidget):
         super().__init__(parent)
         self.setFixedSize(140, 100) # Size of the Face Box
         self.state = "idle"
-        self.color = QColor(0, 255, 255) # Cyan
+        self.color = QColor(240, 240, 240) # White/Silver
         self.mouth_height = 2
         
         # Blink & Look Logic
@@ -205,7 +208,7 @@ class FaceWidget(QWidget):
 
     def set_state(self, state):
         self.state = state
-        if state == "idle": self.color = QColor(0, 255, 255)
+        if state == "idle": self.color = QColor(240, 240, 240)
         elif state == "listening": self.color = QColor(0, 255, 100)
         elif state == "talking": self.color = QColor(255, 50, 50)
         elif state == "thinking": self.color = QColor(180, 0, 255)
@@ -309,11 +312,11 @@ class AddContactDialog(QDialog):
         self.setFixedSize(350, 250)
         # Sci-Fi Style Form
         self.setStyleSheet("""
-            QDialog { background-color: #1a1a1a; border: 2px solid cyan; }
-            QLabel { color: cyan; font-weight: bold; font-family: Arial; }
-            QLineEdit { background-color: #333; color: white; padding: 5px; border: 1px solid #555; }
-            QPushButton { background-color: #005555; color: white; padding: 8px; border-radius: 4px; font-weight: bold; }
-            QPushButton:hover { background-color: #007777; }
+            QDialog { background-color: #0a0a0a; border: 2px solid #333333; }
+            QLabel { color: #ffffff; font-weight: bold; font-family: Arial; }
+            QLineEdit { background-color: #222; color: white; padding: 5px; border: 1px solid #444; }
+            QPushButton { background-color: #222; color: white; padding: 8px; border-radius: 4px; font-weight: bold; border: 1px solid #444; }
+            QPushButton:hover { background-color: #333; }
         """)
         
         layout = QFormLayout(self)
@@ -393,8 +396,8 @@ class JarvisDock(QMainWindow):
         self.container = QFrame()
         self.container.setStyleSheet("""
             QFrame {
-                background-color: rgba(10, 10, 10, 235);
-                border: 2px solid cyan;
+                background-color: rgba(0, 0, 0, 245);
+                border: 2px solid #333333;
                 border-radius: 20px;
             }
         """)
@@ -413,11 +416,11 @@ class JarvisDock(QMainWindow):
         # Status Dot
         self.lbl_status_dot = QLabel()
         self.lbl_status_dot.setFixedSize(12, 12)
-        self.lbl_status_dot.setStyleSheet("background-color: cyan; border-radius: 6px;")
+        self.lbl_status_dot.setStyleSheet("background-color: #ffffff; border-radius: 6px;")
 
         # Status Text
         self.lbl_status_text = QLabel("JARVIS: ONLINE")
-        self.lbl_status_text.setStyleSheet("color: cyan; font-family: Consolas; font-size: 11px; font-weight: bold; border: none; background: transparent;")
+        self.lbl_status_text.setStyleSheet("color: #ffffff; font-family: Consolas; font-size: 11px; font-weight: bold; border: none; background: transparent;")
 
         # Clock Text
         self.lbl_clock = QLabel()
@@ -456,7 +459,7 @@ class JarvisDock(QMainWindow):
         self.chat_display.setStyleSheet("""
             background-color: transparent;
             border: none;
-            color: #00ffff;
+            color: #ffffff;
             font-family: Consolas;
             font-size: 13px;
         """)
@@ -467,15 +470,15 @@ class JarvisDock(QMainWindow):
         self.cmd_input.setStyleSheet("""
             QLineEdit {
                 background-color: rgba(20, 20, 20, 180);
-                border: 1px solid #00ffff;
+                border: 1px solid #333333;
                 border-radius: 5px;
-                color: #00ffff;
+                color: #ffffff;
                 font-family: Consolas;
                 font-size: 12px;
                 padding: 4px;
             }
             QLineEdit:focus {
-                border: 1px solid #ff00ff;
+                border: 1px solid #ffffff;
             }
         """)
         self.cmd_input.returnPressed.connect(self.submit_text_command)
@@ -491,8 +494,8 @@ class JarvisDock(QMainWindow):
         self.btn_contact = QPushButton("➕ Update DB")
         self.btn_contact.setToolTip("Add Phone or Email")
         self.btn_contact.setStyleSheet("""
-            QPushButton { background-color: #004444; color: cyan; border: 1px solid cyan; border-radius: 5px; padding: 4px; font-weight: bold; font-size: 11px; }
-            QPushButton:hover { background-color: #006666; }
+            QPushButton { background-color: #222222; color: #ffffff; border: 1px solid #444444; border-radius: 5px; padding: 4px; font-weight: bold; font-size: 11px; }
+            QPushButton:hover { background-color: #333333; }
         """)
         self.btn_contact.clicked.connect(self.open_add_contact)
 
@@ -560,7 +563,7 @@ class JarvisDock(QMainWindow):
             # Visual indicator: Magenta border
             self.container.setStyleSheet("""
                 QFrame {
-                    background-color: rgba(10, 10, 10, 235);
+                    background-color: rgba(0, 0, 0, 245);
                     border: 2px solid magenta;
                     border-radius: 20px;
                 }
@@ -577,8 +580,8 @@ class JarvisDock(QMainWindow):
         # Restore Cyan border
         self.container.setStyleSheet("""
             QFrame {
-                background-color: rgba(10, 10, 10, 235);
-                border: 2px solid cyan;
+                background-color: rgba(0, 0, 0, 245);
+                border: 2px solid #333333;
                 border-radius: 20px;
             }
         """)
@@ -670,8 +673,8 @@ class JarvisDock(QMainWindow):
         
         # Color codes matching system states
         if state == "idle":
-            self.lbl_status_dot.setStyleSheet("background-color: cyan; border-radius: 6px;")
-            self.lbl_status_text.setStyleSheet("color: cyan; font-family: Consolas; font-size: 11px; font-weight: bold; border: none; background: transparent;")
+            self.lbl_status_dot.setStyleSheet("background-color: #ffffff; border-radius: 6px;")
+            self.lbl_status_text.setStyleSheet("color: #ffffff; font-family: Consolas; font-size: 11px; font-weight: bold; border: none; background: transparent;")
         elif state == "listening":
             self.lbl_status_dot.setStyleSheet("background-color: #00ff64; border-radius: 6px;")
             self.lbl_status_text.setStyleSheet("color: #00ff64; font-family: Consolas; font-size: 11px; font-weight: bold; border: none; background: transparent;")
@@ -720,7 +723,6 @@ if __name__ == "__main__":
     vision_thread.start()
 
     # 2. Launch the GUI
-    app = QApplication(sys.argv)
     gui = JarvisDock()
     gui.show()
     sys.exit(app.exec_())

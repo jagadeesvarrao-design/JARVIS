@@ -48,6 +48,33 @@ class AIBrain:
     def _get_ollama_fallback(self, user_text, context):
         print("⚠️ WARNING: Cloud API unreachable. Rerouting to Local Neural Engine (Ollama)...")
         
+        # Self-healing model resolution: check what models are available locally
+        url_tags = config.OLLAMA_URL.replace("/api/generate", "/api/tags")
+        resolved_model = config.OLLAMA_MODEL
+        try:
+            tags_resp = requests.get(url_tags, timeout=3.0)
+            if tags_resp.status_code == 200:
+                available_models = [m["name"] for m in tags_resp.json().get("models", [])]
+                if available_models:
+                    model_found = False
+                    for am in available_models:
+                        if resolved_model.lower() in am.lower():
+                            resolved_model = am
+                            model_found = True
+                            break
+                    if not model_found:
+                        resolved_model = available_models[0]
+                        print(f"⚠️ Configured model '{config.OLLAMA_MODEL}' not found. Using installed model '{resolved_model}'.")
+                else:
+                    return "Sir, no local models are installed in Ollama. Please run 'ollama pull llama3' in your terminal."
+            else:
+                return "My local neural engine (Ollama) is offline or not responding, Sir."
+        except requests.exceptions.ConnectionError:
+            return "Sir, my cloud connection is down and the local Ollama server is not running."
+        except Exception as te:
+            print(f"⚠️ Ollama model list check failed: {te}")
+            pass
+
         full_prompt = (
             f"You are {identity.BOT_NAME}, created by {config.OWNER_NAME}. "
             f"Personality: Witty, loyal, helpful.\n\n"
@@ -56,7 +83,7 @@ class AIBrain:
         )
         
         payload = {
-            "model": config.OLLAMA_MODEL,
+            "model": resolved_model,
             "prompt": full_prompt,
             "stream": False
         }
@@ -66,8 +93,10 @@ class AIBrain:
             if response.status_code == 200:
                 answer = response.json().get("response", "I could not generate a thought, Sir.")
                 return answer.strip()
+            elif response.status_code == 404:
+                return f"Sir, the model '{resolved_model}' was not found in Ollama. Please download it using 'ollama pull {resolved_model}'."
             else:
-                return "My local neural engine is experiencing errors, Sir."
+                return f"My local neural engine returned error status {response.status_code}, Sir."
         except requests.exceptions.ConnectionError:
             return "Sir, my cloud connection is down and the local Ollama server is not running."
         except Exception as e:
@@ -150,7 +179,23 @@ class AIBrain:
                     attempt += 1
                     continue
                 
-                # 2. Other errors (429 Quota, 503 Overload, 504 Timeout, Connection/Network) -> Rotate Key and retry
+                # 2. Terminal Key Errors (400 Expired, 403 Leaked/Blocked) -> Remove key from pool, rotate, and retry
+                if any(x in error_msg for x in ["400", "invalid_argument", "403", "permission_denied", "expired", "leaked"]):
+                    bad_key = self.api_keys[self.current_key_index]
+                    print(f"❌ Key #{self.current_key_index + 1} is permanently invalid (expired/leaked). Disabling key.")
+                    if bad_key in config.API_KEYS_POOL:
+                        config.API_KEYS_POOL.remove(bad_key)
+                    # Refresh active keys list from pool
+                    self.api_keys = config.API_KEYS_POOL
+                    if self.api_keys:
+                        self.current_key_index = self.current_key_index % len(self.api_keys)
+                    else:
+                        self.client = None
+                    self._connect_client()
+                    attempt += 1
+                    continue
+
+                # 3. Other errors (429 Quota, 503 Overload, 504 Timeout, Connection/Network) -> Rotate Key and retry
                 print(f"⚠️ API Error on Key #{self.current_key_index + 1} ({current_model}): {e}. Rotating to next key...")
                 self._rotate_key()
                 attempt += 1

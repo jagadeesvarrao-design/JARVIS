@@ -3,7 +3,6 @@ import time
 import pyautogui
 import keyboard
 import webbrowser
-import pywhatkit
 import ctypes # ✨ NEW: Required for Window Sensor
 import pywinauto
 
