@@ -9,8 +9,9 @@ class SpeechRecognizer:
         
         # --- 🧠 NEURAL EAR CONFIG (No Compiler Needed) ---
         import importlib.util
+        import config
         self.has_neural_ear = False
-        if importlib.util.find_spec("torch") is not None:
+        if getattr(config, "USE_NEURAL_EAR", False) and importlib.util.find_spec("torch") is not None:
             try:
                 import torch
                 self.has_neural_ear = True

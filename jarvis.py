@@ -276,9 +276,16 @@ class JARVIS:
         self.rec_agent = None
         self.project_agent = None
         
-        # Initialize Memory Globally
-        from agent_module import MemoryAgent
-        self.memory_brain = MemoryAgent()
+        # Initialize Memory Globally (Lazy Loaded)
+        self._memory_brain = None
+
+    @property
+    def memory_brain(self):
+        if self._memory_brain is None:
+            print("🧠 [SYSTEM]: Lazily Initializing Memory Core (ChromaDB)...")
+            from agent_module import MemoryAgent
+            self._memory_brain = MemoryAgent()
+        return self._memory_brain
     def _respond(self, text):
         if text:
             print(f"🤖 JARVIS: {text}")
@@ -535,15 +542,6 @@ class JARVIS:
                 self._respond("I could not compile the briefing at this moment.")
             return False
             
-        # 2. Handle Web Search (The Clean Way)
-        elif "search" in text or "google" in text or "tell me about" in text:
-            # We don't replace "google", we just strip the trigger words
-            # and keep the rest of the search query intact
-            query = text.replace("search for", "").replace("google", "").replace("tell me about", "").strip()
-            self._respond(f"Searching for {query}")
-            
-            # Now pass the 'query' variable to your DDGS search
-            # (ensure your ddgs usage is: with DDGS() as ddgs: ... )
         # ==========================================
         # 🧠 MEMORY & IDENTITY
         # ==========================================
@@ -772,8 +770,11 @@ class JARVIS:
         # ==========================================
         visual_triggers = ["show me", "display", "give me", "find", "search", "look for"]
         image_words = ["images", "image", "picture", "pictures", "photo", "photos", "diagram", "diagrams"]
+        conversational_triggers = ["tell", "who", "what", "why", "how", "explain", "describe", "know", "write", "information", "info", "details", "about", "her", "him", "it", "them", "this", "that", "she", "he", "other", "more", "another"]
         
-        if any(vt in text for vt in visual_triggers) and any(iw in text for iw in image_words):
+        has_conversational_intent = any(ct in text for ct in conversational_triggers)
+        
+        if any(vt in text for vt in visual_triggers) and any(iw in text for iw in image_words) and not has_conversational_intent:
             # 1. CLEAN TOPIC
             topic = text
             garbage_words = visual_triggers + image_words + ["an", "of", "the", "some", "related to", "about", "for"]

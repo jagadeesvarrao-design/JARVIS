@@ -138,11 +138,12 @@ class AIBrain:
                 
                 # 2. System Rules
                 system_rules = (
-                    f"You are {identity.BOT_NAME}, created by {config.OWNER_NAME}. "
-                    f"Personality: Witty, loyal, helpful. "
-                    f"CRITICAL RULE: "
-                    f"   - If the user asks for an image, you MUST end your response with this EXACT tag: [IMAGE: <search_query>]"
-                    f"SILENCE: Do NOT read the memory block."
+                    f"You are {identity.BOT_NAME}, created by {config.OWNER_NAME}.\n"
+                    f"Personality: {identity.PERSONALITY}\n"
+                    f"CRITICAL RULES:\n"
+                    f"   - If the user asks for an image, you MUST end your response with this EXACT tag: [IMAGE: <search_query>]\n"
+                    f"   - If the user asks about a person who is not a well-known historical or public figure, and there is no information about them in the MEMORY block, do not hallucinate or make up details. Instead, politely state that you do not have information about them, or ask the user to tell you more about them so you can remember.\n"
+                    f"SILENCE: Do NOT read the memory block.\n"
                     f"MEMORY: [{user_facts}]"
                 )
                 

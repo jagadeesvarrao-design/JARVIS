@@ -160,9 +160,6 @@ class JarvisThread(QThread):
         # 2. Update Chat & Log
         self.text_signal.emit(f"🤖 {clean_text}") 
         
-        # ✨ LOG TO DASHBOARD
-        log_to_dashboard("jarvis", clean_text)
-        
         # 3. Speak (Clean text only)
         self.original_respond(clean_text)
 
@@ -672,9 +669,6 @@ class JarvisDock(QMainWindow):
         text = self.cmd_input.text().strip()
         if text:
             self.cmd_input.clear()
-            self.update_chat(f"👤 {text}")
-            log_to_dashboard("user", text)
-            
             # Execute command in background thread so GUI remains fluid
             def run_cmd():
                 self.thread.gui_process_wrapper(text)
@@ -718,9 +712,34 @@ class JarvisDock(QMainWindow):
             self.thread.set_attachment(file_path)
 
     def show_hologram(self, query):
-        # Create and show the popup image
-        self.popup = HologramPopup(query, self)
-        self.popup.show()
+        # Instead of showing the image in a small PyQt dialog, download it and open it natively on the main screen of the system.
+        def download_and_open():
+            try:
+                # Use Bing's Thumbnail API (Reliable, fast, and does not require keys)
+                url = f"https://tse2.mm.bing.net/th?q={query}&w=1024&h=768&c=7&rs=1&p=0&dpr=1&pid=1.7&mkt=en-IN&adlt=moderate"
+                data = requests.get(url, timeout=10).content
+                
+                # Sanitize the query to make a safe filename
+                import string
+                import tempfile
+                valid_chars = f"-_.() {string.ascii_letters}{string.digits}"
+                clean_query = "".join(c for c in query if c in valid_chars).strip()
+                if not clean_query:
+                    clean_query = "image"
+                filename = f"{clean_query.replace(' ', '_')}.jpg"
+                filepath = os.path.join(tempfile.gettempdir(), filename)
+                
+                # Write data to file
+                with open(filepath, "wb") as f:
+                    f.write(data)
+                
+                # Open the file on the main screen using the system's default image viewer
+                os.startfile(filepath)
+            except Exception as e:
+                print(f"Error displaying image on main screen: {e}")
+
+        import threading
+        threading.Thread(target=download_and_open, daemon=True).start()
 # ========================================================
 # 🚀 SYSTEM BOOTUP (GUI + Proactive Vision Thread)
 # ========================================================
