@@ -1615,3 +1615,190 @@ IMPORTANT RULES:
                 self.conversation_history.append(f"Observation:\n{obs}")
 
         return self.project_path
+
+
+# =========================================================================
+# 🤖 MULTI-AGENT ORCHESTRATOR / SUPERVISOR
+# =========================================================================
+class OrchestratorAgent:
+    def __init__(self):
+        print("🤖 Initializing Multi-Agent Orchestrator...")
+
+    def _log(self, message):
+        print(f"🤖 [Orchestrator]: {message}")
+        try:
+            from jarvis import log_to_dashboard
+            log_to_dashboard("system", f"🤖 [Orchestrator]: {message}")
+        except:
+            pass
+
+    def decompose_request(self, user_query):
+        self._log(f"Decomposing query: '{user_query}' into structured tasks...")
+        
+        prompt = f"""
+        You are the Supervisor Agent for JARVIS. 
+        Your task is to decompose the following user query into a structured execution plan of sub-tasks:
+        "{user_query}"
+        
+        You have access to these specific agent types:
+        1. "news_agent": Best for tech/AI news headlines summaries.
+        2. "browser_agent": Best for researching topics, browsing websites, or reading info online.
+        3. "memory_agent": Best for recalling specific facts or info previously saved about the user.
+        4. "document_agent": Best for writing reports, creating text files, docx, or PDF manuals based on context.
+        
+        TASK:
+        Break down the user query into a list of tasks. Define dependencies where a task needs the output of another task (e.g. writing a document depends on the research/news search).
+        
+        CRITICAL RULES:
+        - Each task must specify:
+          * "id": Unique string identifier (e.g. "task_1", "task_2").
+          * "agent": One of "news_agent", "browser_agent", "memory_agent", or "document_agent".
+          * "query": The specific instruction to pass to that agent.
+          * "depends_on": List of task ID strings this task depends on (or empty list [] if it can run immediately).
+        - Ensure tasks that can run at the same time (in parallel) have NO dependencies on each other.
+        
+        Return a valid JSON object matching this structure:
+        {{
+            "tasks": [
+                {{
+                    "id": "task_1",
+                    "agent": "agent_name_here",
+                    "query": "instruction here",
+                    "depends_on": []
+                }}
+            ]
+        }}
+        
+        Return JSON ONLY. Do not write any explanations before or after.
+        """
+        try:
+            response_text = model.generate_content(prompt).text
+            import re
+            json_match = re.search(r'(\{[\s\S]*\})', response_text)
+            if json_match:
+                return clean_json_loads(json_match.group(1))
+            else:
+                clean_json = response_text.replace("```json", "").replace("```", "").strip()
+                return clean_json_loads(clean_json)
+        except Exception as e:
+            self._log(f"Error decomposing query: {e}")
+            return None
+
+    def execute_plan(self, plan_data, jarvis_instance=None):
+        if not plan_data or "tasks" not in plan_data:
+            return "Invalid or empty execution plan."
+            
+        tasks = plan_data["tasks"]
+        self._log(f"Execution plan compiled with {len(tasks)} tasks.")
+        
+        results = {}
+        completed = set()
+        running = set()
+        
+        import concurrent.futures
+        
+        agents = {
+            "news_agent": lambda q: NewsAgent().get_tech_news(),
+            "browser_agent": lambda q: BrowserAgent().execute_goal(q),
+            "memory_agent": lambda q: MemoryAgent().recall(q),
+            "document_agent": lambda q: self._run_document_agent(q, results)
+        }
+
+        executor = concurrent.futures.ThreadPoolExecutor(max_workers=4)
+        futures = {}
+
+        while len(completed) < len(tasks):
+            ready_tasks = []
+            for t in tasks:
+                t_id = t["id"]
+                if t_id not in completed and t_id not in running:
+                    deps = t.get("depends_on", [])
+                    if all(dep in completed for dep in deps):
+                        ready_tasks.append(t)
+                        
+            if not ready_tasks and not futures:
+                self._log("⚠️ Deadlock detected in plan dependencies! Stopping execution.")
+                break
+                
+            for t in ready_tasks:
+                t_id = t["id"]
+                agent_name = t["agent"]
+                query = t["query"]
+                
+                deps = t.get("depends_on", [])
+                if deps:
+                    context_str = "\n\n[Previous Tasks Context]:\n"
+                    for dep in deps:
+                        context_str += f"- Output of {dep}: {results.get(dep, 'None')}\n"
+                    query = f"{query}\n{context_str}"
+                
+                self._log(f"🚀 Spawning worker: '{t_id}' using {agent_name}...")
+                running.add(t_id)
+                
+                runner = agents.get(agent_name)
+                if not runner:
+                    self._log(f"Warning: Unknown agent '{agent_name}'. Running fallback conversational logic.")
+                    runner = lambda q: model.generate_content(q).text
+                    
+                future = executor.submit(runner, query)
+                futures[future] = t_id
+                
+            done, _ = concurrent.futures.wait(futures.keys(), return_when=concurrent.futures.FIRST_COMPLETED)
+            
+            for future in done:
+                t_id = futures.pop(future)
+                running.remove(t_id)
+                completed.add(t_id)
+                try:
+                    res = future.result()
+                    results[t_id] = res
+                    self._log(f"✅ Worker '{t_id}' completed successfully.")
+                except Exception as ex:
+                    results[t_id] = f"Error: {ex}"
+                    self._log(f"❌ Worker '{t_id}' crashed: {ex}")
+                    
+        executor.shutdown(wait=True)
+        
+        self._log("Consolidating all task outputs...")
+        report = []
+        for t in tasks:
+            t_id = t["id"]
+            agent_name = t["agent"]
+            desc = t["query"]
+            report.append(f"### Task: {t_id} ({agent_name})\n**Query**: {desc}\n**Result**:\n{results.get(t_id, 'No output.')}\n")
+            
+        final_summary_prompt = f"""
+        You are the JARVIS Supervisor. Consolidate and summarize the results of the execution plan below into a unified response for the user.
+        
+        PLAN RESULTS:
+        {"/n/n".join(report)}
+        
+        Output a professional, conversational response that summarizes everything done, highlighting key findings or files generated. Do not repeat raw technical logs unless useful.
+        """
+        try:
+            summary = model.generate_content(final_summary_prompt).text
+            return summary
+        except Exception as e:
+            return "\n\n".join(report)
+
+    def _run_document_agent(self, query, results):
+        from agent_module import DocumentAgent
+        doc = DocumentAgent()
+        
+        context = "\n".join([f"Output: {val}" for val in results.values() if isinstance(val, str)])
+        content = doc.generate_content(query, context)
+        
+        file_type = "pdf"
+        if "word" in query.lower() or "docx" in query.lower():
+            file_type = "docx"
+        elif "text" in query.lower() or "txt" in query.lower():
+            file_type = "txt"
+            
+        filepath = doc.create_file(query[:30], content, file_type)
+        if filepath:
+            try:
+                os.startfile(filepath)
+            except:
+                pass
+            return f"Document successfully written and saved to: {filepath}"
+        return f"Failed to generate document file, but here is the drafted content:\n\n{content}"

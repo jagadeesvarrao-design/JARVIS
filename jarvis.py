@@ -265,6 +265,33 @@ class JARVIS:
         
         # Initialize Memory Globally (Lazy Loaded)
         self._memory_brain = None
+        
+        # Dynamic Skills System initialization
+        self.skills = []
+        self.load_skills()
+
+    def load_skills(self):
+        self.skills = []
+        skills_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "skills")
+        if not os.path.exists(skills_dir):
+            os.makedirs(skills_dir)
+            
+        import importlib.util
+        try:
+            for filename in os.listdir(skills_dir):
+                if filename.endswith(".py") and filename != "__init__.py":
+                    skill_name = filename[:-3]
+                    filepath = os.path.join(skills_dir, filename)
+                    spec = importlib.util.spec_from_file_location(skill_name, filepath)
+                    module = importlib.util.module_from_spec(spec)
+                    spec.loader.exec_module(module)
+                    
+                    if hasattr(module, "get_triggers") and hasattr(module, "execute"):
+                        self.skills.append(module)
+                        print(f"🔌 [SKILLS SYSTEM]: Dynamic skill '{skill_name}' successfully loaded.")
+        except Exception as e:
+            print(f"⚠️ [SKILLS SYSTEM]: Error loading dynamic skills: {e}")
+
 
     @property
     def memory_brain(self):
@@ -529,6 +556,20 @@ Return ONLY a valid JSON object matching this schema:
             record_shutdown()
             import sys
             sys.exit(0)
+            
+        # 1.5 Dynamic Skills Routing
+        for skill in self.skills:
+            try:
+                triggers = skill.get_triggers()
+                for trigger in triggers:
+                    if isinstance(trigger, str):
+                        match = re.search(trigger, text)
+                        if match:
+                            res = skill.execute(self, text, original_text, match)
+                            if res is not None:
+                                return res
+            except Exception as se:
+                print(f"⚠️ [SKILLS SYSTEM]: Error executing skill: {se}")
             
         # 2. Semantic Intent Routing
         intent_data = self._determine_intent(text)
@@ -872,61 +913,8 @@ Return ONLY a valid JSON object matching this schema:
             return False
 
         # ==========================================
-        # 📂 LEVEL 2: FILES & FOLDERS
+        # 📂 LEVEL 2: FILES & FOLDERS (Migrated to skills/file_management.py)
         # ==========================================
-        if "create folder" in text:
-            name = text.replace("create folder", "").strip()
-            path = os.path.join(get_desktop_path(), name)
-            if not os.path.exists(path):
-                os.makedirs(path)
-                self._respond(f"Created {name}.")
-                os.startfile(path)
-            return False
-
-        if "create file" in text:
-            if " inside " in text:
-                parts = text.replace("create file", "").split(" inside ")
-                file_name = parts[0].strip()
-                folder_name = parts[1].strip()
-                folder_path = find_folder_globally(folder_name)
-                if folder_path:
-                    full_path = os.path.join(folder_path, f"{file_name}.txt")
-                    with open(full_path, "w") as f: f.write("")
-                    self._respond(f"Created {file_name} inside {folder_name}.")
-                    os.startfile(full_path)
-                else: self._respond(f"Folder {folder_name} not found.")
-            else:
-                name = text.replace("create file", "").strip()
-                path = os.path.join(get_desktop_path(), f"{name}.txt")
-                with open(path, "w") as f: f.write("")
-                self._respond(f"Created {name}.")
-                os.startfile(path)
-            return False
-
-        if "open folder" in text:
-            name = text.replace("open folder", "").strip()
-            path = find_folder_globally(name)
-            if path:
-                self._respond("Opening.")
-                os.startfile(path)
-            else: self._respond("Not found.")
-            return False
-
-        if "delete folder" in text:
-            name = text.replace("delete folder", "").strip()
-            path = os.path.join(get_desktop_path(), name)
-            if os.path.exists(path):
-                self._respond(f"Delete {name}?")
-                confirm = self._force_listen(retries=2) or ""
-                if any(w in confirm.lower() for w in ["yes", "delete", "sure"]):
-                    try:
-                        def on_rm_error(func, path, exc_info):
-                         os.chmod(path, 128)
-                         os.unlink(path)
-                        shutil.rmtree(path, onerror=on_rm_error)
-                        self._respond("Deleted.")
-                    except: self._respond("Could not delete.")
-            return False
 
         # ==========================================
         # 📝: DOCUMENT GENERATION
