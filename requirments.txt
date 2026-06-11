@@ -10,6 +10,8 @@ flask-sqlalchemy
 speechrecognition
 pyttsx3
 pyaudio
+pygame-ce
+edge-tts
 
 # Automation & Vision
 pyautogui
@@ -26,6 +28,8 @@ wikipedia
 beautifulsoup4
 ddgs
 pyngrok
+youtube-transcript-api
+
 
 # Developer & Agent Tools
 AppOpener

@@ -46,17 +46,30 @@ stop_speech_event = threading.Event()
 speaking_callback = None
 use_edge_tts = True
 
-# SAPI Constants
-SVSFlagsAsync = 1
-SVSFPurgeBeforeSpeak = 2
-
 # The dedicated voice-only worker
 def voice_worker():
-    pythoncom.CoInitialize() # Crucial for Windows Audio
-    speaker = win32com.client.Dispatch("SAPI.SpVoice")
+    import pyttsx3
+    import pygame
     
-    # Adjust speed: 0 is normal, positive (1-10) is faster, negative is slower
-    speaker.Rate = 2 
+    # Initialize Pygame Mixer for MP3 playback
+    try:
+        pygame.mixer.init()
+    except Exception as e:
+        print(f"⚠️ Failed to init Pygame mixer: {e}")
+        
+    # Initialize Pyttsx3 for fallback offline TTS
+    engine = None
+    try:
+        engine = pyttsx3.init()
+        voices = engine.getProperty('voices')
+        # Try to set a female or better sounding offline voice if available
+        for voice in voices:
+            if "Zira" in voice.name or "Female" in voice.name:
+                engine.setProperty('voice', voice.id)
+                break
+        engine.setProperty('rate', 175) 
+    except Exception as e:
+        print(f"⚠️ Failed to init pyttsx3: {e}")
     
     while True:
         text = voice_queue.get()
@@ -81,17 +94,18 @@ def voice_worker():
                 try:
                     # Generate Edge TTS voice file
                     async def run_tts():
-                        voice = getattr(config, "TTS_VOICE", "en-US-GuyNeural")
+                        # We use Aria for a very human-like female voice or Guy for male
+                        voice = getattr(config, "TTS_VOICE", "en-US-AriaNeural")
                         communicate = edge_tts.Communicate(text, voice)
                         await communicate.save(temp_file)
                     
                     loop = asyncio.new_event_loop()
                     asyncio.set_event_loop(loop)
-                    loop.run_until_complete(asyncio.wait_for(run_tts(), timeout=2.0))
+                    loop.run_until_complete(asyncio.wait_for(run_tts(), timeout=4.0))
                     loop.close()
                     success = True
                 except Exception as e:
-                    print(f"⚠️ Edge TTS failed: {e}. Falling back to SAPI.")
+                    print(f"⚠️ Edge TTS failed: {e}. Falling back to pyttsx3.")
                     success = False
                     # Network or resolution errors disable Edge TTS for this session
                     err_str = str(e).lower()
@@ -101,60 +115,33 @@ def voice_worker():
                 
             if success and os.path.exists(temp_file):
                 try:
-                    # Play using WMPlayer.OCX
-                    player = win32com.client.Dispatch("WMPlayer.OCX")
-                    player.URL = os.path.abspath(temp_file)
-                    player.controls.play()
+                    # Play using Pygame
+                    pygame.mixer.music.load(temp_file)
+                    pygame.mixer.music.play()
                     
-                    # Wait for player to start playing
-                    start_time = time.time()
-                    while player.playState != 3: # 3 = Playing
-                        pythoncom.PumpWaitingMessages()
-                        time.sleep(0.02)
+                    while pygame.mixer.music.get_busy():
+                        time.sleep(0.05)
                         if stop_speech_event.is_set():
-                            player.controls.stop()
-                            break
-                        if time.time() - start_time > 4.0:
-                            if player.playState in [1, 8, 10]:
-                                break
-                            player.controls.play()
-                            
-                    # Wait until completed
-                    while player.playState == 3:
-                        pythoncom.PumpWaitingMessages()
-                        time.sleep(0.02)
-                        if stop_speech_event.is_set():
-                            player.controls.stop()
+                            pygame.mixer.music.stop()
                             break
                             
+                    pygame.mixer.music.unload()
                     # Clean up temporary file
                     try:
                         os.remove(temp_file)
                     except:
                         pass
                 except Exception as pe:
-                    print(f"⚠️ WMPlayer Error: {pe}. Falling back to SAPI.")
-                    # Fallback SAPI speech
-                    try:
-                        speaker.Speak(text, SVSFlagsAsync)
-                        while not speaker.WaitUntilDone(50):
-                            if stop_speech_event.is_set():
-                                speaker.Speak("", SVSFPurgeBeforeSpeak | SVSFlagsAsync)
-                                break
-                            time.sleep(0.01)
-                    except:
-                        pass
+                    print(f"⚠️ Pygame Playback Error: {pe}. Falling back to pyttsx3.")
+                    # Fallback speech
+                    if engine:
+                        engine.say(text)
+                        engine.runAndWait()
             else:
-                # Fallback SAPI speech
-                try:
-                    speaker.Speak(text, SVSFlagsAsync)
-                    while not speaker.WaitUntilDone(50):
-                        if stop_speech_event.is_set():
-                            speaker.Speak("", SVSFPurgeBeforeSpeak | SVSFlagsAsync)
-                            break
-                        time.sleep(0.01)
-                except Exception as se:
-                    print(f"❌ Fallback voice error: {se}")
+                # Fallback speech
+                if engine:
+                    engine.say(text)
+                    engine.runAndWait()
         finally:
             if speaking_callback:
                 try:
@@ -512,10 +499,55 @@ class JARVIS:
         return False
 
 
-        
+    def _determine_intent(self, text):
+        prompt = f"""Analyze the user's command and determine the intent.
+Command: "{text}"
+Return ONLY a valid JSON object matching this schema:
+{{
+  "intent": "web_search" | "build_project" | "memory_store" | "memory_recall" | "system_control" | "conversational",
+  "topic": "extracted topic or None"
+}}
+"""
+        try:
+            response_text = self.brain.get_response(prompt).strip()
+            import re, json
+            json_match = re.search(r'(\{[\s\S]*\})', response_text)
+            if json_match:
+                return json.loads(json_match.group(1))
+            return {"intent": "conversational", "topic": text}
+        except Exception as e:
+            return {"intent": "conversational", "topic": text}
+
     def process_command(self, text):
+        original_text = text
         text = text.lower()
         print(f"👤 USER: {text}")
+        
+        # 1. Handle Exit (Hard override)
+        if "exit" in text or "quit" in text:
+            self._respond("Powering down.")
+            record_shutdown()
+            import sys
+            sys.exit(0)
+            
+        # 2. Semantic Intent Routing
+        intent_data = self._determine_intent(text)
+        intent = intent_data.get("intent", "conversational")
+        topic = intent_data.get("topic", "")
+        
+        print(f"🧠 [ROUTER] Intent detected: {intent} | Topic: {topic}")
+        
+        # Override specifically for building complex projects to use Devin-like agent
+        is_site_request = bool(re.search(r'\b(build|create|design|make)\s+(?:an?\s+)?(?!.*\b(?:document|report|file|folder)\b)(?:[a-z0-9_-]+\s+){0,3}(?:website|web site|project|app)\b', text))
+        if intent == "build_project" or is_site_request:
+            if not topic or len(topic) < 3:
+                topic = "New_Project"
+            self._respond(f"Initializing Autonomous Iterative Agent to build {topic}...")
+            from agent_module import IterativeProjectAgent
+            self.project_agent = IterativeProjectAgent()
+            self.project_agent.execute_loop(topic, text)
+            self._respond(f"Project built successfully. Check the PROJECTS folder.")
+            return False
         
         # 1. Handle Exit
         if "exit" in text or "quit" in text:
@@ -1221,7 +1253,10 @@ class JARVIS:
         # ==========================================
         # 🏗️  MULTI-AGENT FACTORY (CREWAI INTEGRATION)
         # ==========================================
-        is_site_request = bool(re.search(r'\b(build|create|design|make)\s+(?:an?\s+)?(?!.*\b(?:document|report|file|folder)\b)(?:[a-z0-9_-]+\s+){0,3}(?:website|web site|project)\b', text))
+        # This has been successfully routed via Semantic Intent Routing to the IterativeProjectAgent above.
+        # Retaining the old logic block condition so it doesn't break syntax, but it will never be reached 
+        # because the intent router catches it first at the top of process_command.
+        is_site_request = False 
         if is_site_request:
             # STEP 1: INITIATION
             match = re.search(r'\b(build|create|design|make)\s+(?:an?\s+)?(?!.*\b(?:document|report|file|folder)\b)(?:[a-z0-9_-]+\s+){0,3}(?:website|web site|project)\b', text)
@@ -1417,12 +1452,28 @@ class JARVIS:
         # 🧠 AI CONVERSATION
         # ==========================================
         
+        # Check for YouTube links to inject transcript context
+        query_text = text
+        yt_match = re.search(r"(?:https?://)?(?:www\.|m\.)?(?:youtube\.com/watch\?v=|youtu\.be/|youtube\.com/embed/)([a-zA-Z0-9_-]{11})", original_text)
+        if yt_match:
+            video_id = yt_match.group(1)
+            self._respond("Extracting YouTube video transcript, please hold...")
+            try:
+                from youtube_transcript_api import YouTubeTranscriptApi
+                transcript_list = YouTubeTranscriptApi().fetch(video_id).to_raw_data()
+                yt_transcript = " ".join([entry['text'] for entry in transcript_list])
+                print(f"📹 [YOUTUBE SYSTEM]: Successfully fetched transcript for video ID: {video_id} ({len(yt_transcript)} characters)")
+                query_text = f"User Request: {text}\n\n[YouTube Transcript Context (Video ID: {video_id})]\n{yt_transcript}\n[End YouTube Transcript Context]"
+            except Exception as e:
+                print(f"⚠️ YouTube Transcript Error: {e}")
+                self._respond("I was unable to retrieve the transcript for this video. It may not have subtitles or they might be disabled, Sir.")
+
         active_window = self.automation.get_active_window_title() if hasattr(self.automation, 'get_active_window_title') else ""
         context = f"{self.last_topic}. User is looking at: {active_window}" if active_window else self.last_topic
 
         # 1. Get raw response (Force Anti-Code)
         force_tag = " IMPORTANT: Use the tag [IMAGE: <topic>] for visual explanations. Do NOT write code."
-        response = self.brain.get_response(text + force_tag, context=context)
+        response = self.brain.get_response(query_text + force_tag, context=context)
 
         # 2. Process Response (Holograms & Filters)
         if response:

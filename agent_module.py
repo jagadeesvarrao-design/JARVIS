@@ -1498,3 +1498,120 @@ class BrowserAgent:
             result = f"Failed to complete goal: {e}"
             
         return result
+
+# =========================================================================
+# 🤖 DEVIN-LIKE ITERATIVE PROJECT AGENT
+# =========================================================================
+class IterativeProjectAgent(ProjectAgent):
+    def __init__(self):
+        super().__init__()
+        self.conversation_history = []
+        
+    def _is_safe_command(self, cmd):
+        safe_prefixes = ["dir", "echo", "type", "pip", "npm install", "npm run", "python", "pytest", "cd", "mkdir"]
+        cmd_lower = cmd.lower()
+        for safe in safe_prefixes:
+            if cmd_lower.startswith(safe):
+                return True
+        return False
+        
+    def execute_loop(self, project_name, instructions):
+        self.project_name = project_name.replace(" ", "_")
+        self.project_path = os.path.join(self.base_dir, self.project_name)
+        if not os.path.exists(self.project_path): os.makedirs(self.project_path)
+        
+        self._log("task", f"Starting Autonomous Devin-like Agent Loop for {self.project_name}...")
+        
+        system_prompt = f"""You are an autonomous AI software engineer, like Devin.
+Your task is to build the project: {instructions}
+
+You must work inside the directory: {self.project_path}
+You have access to two actions. You must use them one at a time. After each action, I will give you the result.
+
+1. Run a terminal command:
+<CMD>
+command here
+</CMD>
+
+2. Write a file (specify relative path):
+<FILE: path/to/file.py>
+file content here
+</FILE>
+
+IMPORTANT RULES:
+- Always use Windows syntax (e.g. 'dir', 'type', 'python').
+- Do not run interactive commands (like vim). Start servers in the background if testing.
+- First step should always be generating the initial project files.
+- Run tests or execute the code to verify it works, then fix any errors you see in the terminal output.
+- When you are completely finished building and verifying the project, output exactly: <DONE>
+"""
+        self.conversation_history = [system_prompt]
+        
+        max_iterations = 25
+        for i in range(max_iterations):
+            self._log("task", f"Iteration {i+1}/{max_iterations} - AI Thinking...")
+            full_prompt = "\n\n".join(self.conversation_history)
+            
+            try:
+                response_text = model.generate_content(full_prompt).text
+            except Exception as e:
+                self._log("system", f"LLM Error: {e}")
+                self.conversation_history.append(f"System Error: {e}")
+                time.sleep(2)
+                continue
+                
+            self.conversation_history.append(response_text)
+            import re
+            
+            if "<DONE>" in response_text:
+                self._log("task", "Agent finished building the project autonomously.")
+                break
+                
+            cmd_match = re.search(r'<CMD>\s*(.*?)\s*</CMD>', response_text, re.DOTALL)
+            file_match = re.search(r'<FILE:\s*([^>]+)>\s*(.*?)\s*</FILE>', response_text, re.DOTALL)
+            
+            if cmd_match:
+                command = cmd_match.group(1).strip()
+                self._log("task", f"Executing Command: {command}")
+                
+                # Ask permission if it's an important/unsafe command
+                if not self._is_safe_command(command):
+                    print(f"\n⚠️ JARVIS wants to run an important command: {command}")
+                    user_input = input("Allow? (y/n): ")
+                    if user_input.lower() != 'y':
+                        output = "User denied permission to run this command."
+                        self.conversation_history.append(f"Observation:\n{output}")
+                        continue
+                
+                try:
+                    import subprocess
+                    result = subprocess.run(command, shell=True, cwd=self.project_path, capture_output=True, text=True, timeout=30)
+                    output = f"Command exited with {result.returncode}.\nSTDOUT:\n{result.stdout}\nSTDERR:\n{result.stderr}"
+                except subprocess.TimeoutExpired:
+                    output = "Command timed out after 30 seconds."
+                except Exception as e:
+                    output = f"Execution failed: {e}"
+                    
+                self._log("system", output[:200] + "...")
+                self.conversation_history.append(f"Observation:\n{output}")
+                
+            elif file_match:
+                rel_path = file_match.group(1).strip()
+                content = file_match.group(2)
+                
+                full_path = os.path.join(self.project_path, rel_path)
+                os.makedirs(os.path.dirname(full_path), exist_ok=True)
+                try:
+                    with open(full_path, "w", encoding="utf-8") as f:
+                        f.write(content)
+                    obs = f"Successfully wrote file: {rel_path}"
+                except Exception as e:
+                    obs = f"Failed to write file: {e}"
+                    
+                self._log("task", obs)
+                self.conversation_history.append(f"Observation:\n{obs}")
+            else:
+                obs = "No <CMD> or <FILE> tags found. You must take an action or output <DONE>."
+                self.conversation_history.append(f"Observation:\n{obs}")
+
+        return self.project_path
