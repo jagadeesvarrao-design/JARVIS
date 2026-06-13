@@ -1,17 +1,15 @@
-import speech_recognition as sr
-import numpy as np
 import time
 
 class SpeechRecognizer:
     def __init__(self):
+        import speech_recognition as sr
         self.recognizer = sr.Recognizer()
         self.microphone = sr.Microphone(sample_rate=16000, chunk_size=512)
         
         # --- 🧠 NEURAL EAR CONFIG (No Compiler Needed) ---
-        import importlib.util
         import config
         self.has_neural_ear = False
-        if getattr(config, "USE_NEURAL_EAR", False) and importlib.util.find_spec("torch") is not None:
+        if getattr(config, "USE_NEURAL_EAR", False):
             try:
                 import torch
                 self.has_neural_ear = True
@@ -72,6 +70,7 @@ class SpeechRecognizer:
                 if self.has_neural_ear:
                     # --- 🧠 NEURAL VERIFICATION ---
                     import torch
+                    import numpy as np
                     # Convert raw audio to 16k mono for the AI model to analyze
                     raw_data = audio.get_raw_data(convert_rate=16000, convert_width=2)
                     audio_int16 = np.frombuffer(raw_data, dtype=np.int16)

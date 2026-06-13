@@ -8,23 +8,9 @@ import os
 import time
 import subprocess
 import json
-import git
 import shutil
-import threading # NEW: For background recording
-import cv2  # NEW: For Video Recording
-import pyaudio  # NEW: For Audio Recording
-import wave     # NEW: For Saving Audio
-import pyautogui  # For Screen Capture
-from PIL import Image  # For Image Processing
-from pyngrok import ngrok
-from ddgs import DDGS
-from github import Github
+import threading
 from config import API_KEYS_POOL
-import google.generativeai as genai
-from fpdf import FPDF  # For Generating Project PDFs
-from docx import Document as WordDoc
-from docx.shared import Pt, RGBColor
-import keyboard
 
 # --- CONFIGURE AI (Rotating Model Wrapper to support API_KEYS_POOL) ---
 class MockResponse:
@@ -204,6 +190,7 @@ class RecorderAgent:
         filepath = os.path.join(self.doc_dir, f"{clean_name}.avi")
         
         def record_thread():
+            import cv2
             cap = cv2.VideoCapture(0)
             fourcc = cv2.VideoWriter_fourcc(*'XVID')
             out = cv2.VideoWriter(filepath, fourcc, 20.0, (640, 480))
@@ -231,6 +218,7 @@ class RecorderAgent:
         def record_thread():
             import numpy as np
             from PIL import ImageGrab
+            import cv2
             
             screen = ImageGrab.grab()
             width, height = screen.size
@@ -254,6 +242,9 @@ class RecorderAgent:
 
 
     def start_audio_recording(self, filename="audio_record"):
+        import pyaudio
+        import wave
+        import keyboard
         self.is_recording = True
         clean_name = filename.replace(" ", "_")
         filepath = os.path.join(self.doc_dir, f"{clean_name}.wav")
@@ -316,6 +307,7 @@ class NewsAgent:
         def do_search():
             nonlocal results
             try:
+                from duckduckgo_search import DDGS
                 with DDGS() as ddgs:
                     results = list(ddgs.text("latest technology news artificial intelligence 2026", max_results=5))
             except Exception as e:
@@ -371,50 +363,53 @@ class SecretaryAgent:
 # =========================================================================
 # 📄 CUSTOM CLASS: DARK MODE PDF ENGINE
 # =========================================================================
-class DarkPDF(FPDF):
-    def header(self):
-        # Dark Background
-        self.set_fill_color(10, 10, 15)  # Almost Black
-        self.rect(0, 0, 210, 297, 'F')  # Fill page
+def get_dark_pdf_class():
+    from fpdf import FPDF
+    class DarkPDF(FPDF):
+        def header(self):
+            # Dark Background
+            self.set_fill_color(10, 10, 15)  # Almost Black
+            self.rect(0, 0, 210, 297, 'F')  # Fill page
 
-        # Neon Line
-        self.set_draw_color(0, 243, 255)  # Cyan
-        self.set_line_width(1)
-        self.line(10, 25, 200, 25)
+            # Neon Line
+            self.set_draw_color(0, 243, 255)  # Cyan
+            self.set_line_width(1)
+            self.line(10, 25, 200, 25)
 
-        # Title
-        self.set_font('Courier', 'B', 10)
-        self.set_text_color(0, 243, 255)  # Cyan
-        self.cell(0, 10, 'JARVIS SYSTEM ARCHIVE // CLASSIFIED', 0, 0, 'R')
-        self.ln(20)
+            # Title
+            self.set_font('Courier', 'B', 10)
+            self.set_text_color(0, 243, 255)  # Cyan
+            self.cell(0, 10, 'JARVIS SYSTEM ARCHIVE // CLASSIFIED', 0, 0, 'R')
+            self.ln(20)
 
-    def footer(self):
-        self.set_y(-15)
-        self.set_font('Courier', 'I', 8)
-        self.set_text_color(100, 100, 100)  # Grey
-        self.cell(0, 10, f'Page {self.page_no()}', 0, 0, 'C')
+        def footer(self):
+            self.set_y(-15)
+            self.set_font('Courier', 'I', 8)
+            self.set_text_color(100, 100, 100)  # Grey
+            self.cell(0, 10, f'Page {self.page_no()}', 0, 0, 'C')
 
-    def chapter_title(self, title):
-        self.set_font('Arial', 'B', 14)
-        self.set_text_color(0, 243, 255)  # Cyan
-        self.cell(0, 10, title.upper(), 0, 1, 'L')
-        self.ln(5)
+        def chapter_title(self, title):
+            self.set_font('Arial', 'B', 14)
+            self.set_text_color(0, 243, 255)  # Cyan
+            self.cell(0, 10, title.upper(), 0, 1, 'L')
+            self.ln(5)
 
-    def chapter_body(self, body):
-        self.set_font('Arial', '', 11)
-        self.set_text_color(220, 220, 220)  # Off-White
-        # Robust encoding handling to prevent crashes on special chars
-        clean_body = body.encode('latin-1', 'replace').decode('latin-1')
-        self.multi_cell(0, 6, clean_body)
-        self.ln(5)
+        def chapter_body(self, body):
+            self.set_font('Arial', '', 11)
+            self.set_text_color(220, 220, 220)  # Off-White
+            # Robust encoding handling to prevent crashes on special chars
+            clean_body = body.encode('latin-1', 'replace').decode('latin-1')
+            self.multi_cell(0, 6, clean_body)
+            self.ln(5)
 
-    def add_code_block(self, code):
-        self.set_font('Courier', '', 10)
-        self.set_text_color(0, 255, 0)  # Matrix Green
-        self.set_fill_color(20, 20, 20)  # Dark Grey Box
-        clean_code = code.encode('latin-1', 'replace').decode('latin-1')
-        self.multi_cell(0, 5, clean_code, 0, 'L', True)
-        self.ln(5)
+        def add_code_block(self, code):
+            self.set_font('Courier', '', 10)
+            self.set_text_color(0, 255, 0)  # Matrix Green
+            self.set_fill_color(20, 20, 20)  # Dark Grey Box
+            clean_code = code.encode('latin-1', 'replace').decode('latin-1')
+            self.multi_cell(0, 5, clean_code, 0, 'L', True)
+            self.ln(5)
+    return DarkPDF
 
 # =========================================================================
 # 👁️ VISION AGENT (The Eyes)
@@ -422,12 +417,14 @@ class DarkPDF(FPDF):
 class VisionAgent:
     """The Eyes of JARVIS: Captures and analyzes the screen."""
     def take_screenshot(self):
+        import pyautogui
         screenshot_path = os.path.join(os.getcwd(), "vision_capture.png")
         screenshot = pyautogui.screenshot()
         screenshot.save(screenshot_path)
         return screenshot_path
 
     def analyze_screen(self, prompt="What do you see on my screen?"):
+        from PIL import Image
         path = self.take_screenshot()
         img = Image.open(path)
         try:
@@ -579,6 +576,7 @@ class ProjectAgent:
         def do_search():
             nonlocal market_data
             try:
+                from duckduckgo_search import DDGS
                 with DDGS() as ddgs:
                     query = f"top 10 modern {topic} website features trends 2026"
                     results = list(ddgs.text(query, max_results=5))
@@ -626,6 +624,7 @@ class ProjectAgent:
         def do_search():
             nonlocal market_data
             try:
+                from duckduckgo_search import DDGS
                 with DDGS() as ddgs:
                     query = f"top 10 modern {topic} website features trends 2026"
                     results = list(ddgs.text(query, max_results=5))
@@ -979,6 +978,7 @@ class ProjectAgent:
     # --- [STEP 7] DEPLOYMENT & PORT STORAGE ---
     def deploy_to_internet(self, database_type=None):
         self._log("task", "🌐 HANDOVER: Initializing secure public ngrok tunnel...")
+        from pyngrok import ngrok
         ngrok.kill()
         
         # 1. Start Tunnel
@@ -1054,6 +1054,7 @@ class ProjectAgent:
                     self.server_process.kill()
                 except:
                     pass
+        from pyngrok import ngrok
         ngrok.kill()
         self._log("task", "Web server processes and public ngrok tunnels cleanly terminated.")
 
@@ -1102,6 +1103,7 @@ class ProjectAgent:
     def generate_project_pdf(self, requirements, trends):
         if not self.project_path: return None
         try:
+            DarkPDF = get_dark_pdf_class()
             pdf = DarkPDF() # Assumes DarkPDF class exists in your file
             pdf.add_page()
             pdf.chapter_title(f"PROJECT: {self.project_name}")
@@ -1129,7 +1131,7 @@ class ProjectAgent:
                 return "Sir, I need a GITHUB_TOKEN in your .env file to access your account."
                 
             # 1. Authenticate with GitHub API
-            from github import Auth
+            from github import Github, Auth
             auth = Auth.Token(config.GITHUB_TOKEN)
             g = Github(auth=auth)
             user = g.get_user()
@@ -1149,6 +1151,7 @@ class ProjectAgent:
                 self._log("system", "Repository already exists. Preparing update sequence...")
                 
             # 3. Initialize Local Git (git init)
+            import git
             local_repo = git.Repo.init(self.project_path)
             
             # 4. Stage and Commit (git add . && git commit)
@@ -1195,7 +1198,7 @@ class ProjectAgent:
             if not hasattr(config, 'GITHUB_TOKEN') or not config.GITHUB_TOKEN:
                 return "Sir, I need a GITHUB_TOKEN in your .env file to access your account."
                 
-            from github import Auth
+            from github import Github, Auth
             auth = Auth.Token(config.GITHUB_TOKEN)
             g = Github(auth=auth)
             user = g.get_user()
@@ -1284,6 +1287,7 @@ class DocumentAgent:
         try:
             # 1. PDF GENERATION (Dark Mode Style)
             if file_type == "pdf":
+                DarkPDF = get_dark_pdf_class()
                 pdf = DarkPDF()
                 pdf.add_page()
                 pdf.chapter_title(topic.upper())
@@ -1292,6 +1296,8 @@ class DocumentAgent:
 
             # 2. WORD DOCUMENT (.docx)
             elif file_type == "docx":
+                from docx import Document as WordDoc
+                from docx.shared import RGBColor
                 doc = WordDoc()
                 title = doc.add_heading(topic.upper(), 0)
                 run = title.runs[0]

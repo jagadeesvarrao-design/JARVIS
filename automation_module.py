@@ -1,10 +1,7 @@
 import os
 import time
-import pyautogui
-import keyboard
 import webbrowser
-import ctypes # ✨ NEW: Required for Window Sensor
-import pywinauto
+import ctypes
 
 class ApplicationController:
     def __init__(self):
@@ -83,6 +80,7 @@ class ApplicationController:
     # =================================================================
     def open_app(self, command):
         """Opens an application using AppOpener, System Command, or Search"""
+        import pyautogui
         app_name = command.replace("open", "").strip().lower()
         if not app_name: return "What app?"
         
@@ -118,6 +116,7 @@ class ApplicationController:
 
     def close_app(self, command):
         """Smart Closing: Distinguishes between Browser Tabs and Apps, uses pywinauto graceful close first"""
+        import pyautogui
         app_name = command.replace("close", "").strip().lower()
         print(f"❌ Closing: {app_name}")
 
@@ -157,6 +156,7 @@ class ApplicationController:
         1. If YouTube is OPEN: Types in the search bar.
         2. If YouTube is CLOSED: Opens the YouTube APP.
         """
+        import pyautogui
         song = command.lower()
         remove_words = ["play", "on youtube", "song", "music", "video", "please", "search", "for"]
         for word in remove_words:
@@ -189,6 +189,7 @@ class ApplicationController:
             return f"Opening YouTube App for {song}."
 
     def type_text(self, text):
+        import pyautogui
         clean_text = text.replace("write", "").replace("type", "").strip()
         time.sleep(1.0) # Buffer to let you switch windows
         try:
@@ -213,6 +214,7 @@ class ApplicationController:
     # 3. MEDIA CONTROLS
     # =================================================================
     def media_control(self, command):
+        import pyautogui
         command = command.lower()
         if "volume up" in command: pyautogui.press("volumeup", presses=5)
         elif "volume down" in command: pyautogui.press("volumedown", presses=5)
@@ -226,6 +228,7 @@ class ApplicationController:
     # 4. MASTER SYSTEM AUTOMATION (Your Original Full List)
     # =================================================================
     def perform_action(self, command):
+        import pyautogui
         command = command.lower()
         try:
             # --- Browser & Tabs ---
