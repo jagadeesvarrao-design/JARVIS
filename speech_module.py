@@ -1,4 +1,6 @@
 import time
+import os
+import tempfile
 
 class SpeechRecognizer:
     def __init__(self):
@@ -18,6 +20,15 @@ class SpeechRecognizer:
         self.model = None
         self.get_speech_timestamps = None
 
+        # --- 🎙️ SPEAKER VERIFICATION (BIOMETRICS) ---
+        self.speaker_verification_enabled = getattr(config, "SPEAKER_VERIFICATION_ENABLED", False)
+        self.speaker_model = None
+        self.speaker_ref_path = getattr(config, "SPEAKER_REF_PATH", "owner_voice_ref.wav")
+        self.speaker_threshold = getattr(config, "SPEAKER_THRESHOLD", 0.25)
+        
+        if self.speaker_verification_enabled:
+            self._load_speaker_verification_model()
+
         # --- DEEP FIX SETTINGS ---
         self.recognizer.energy_threshold = 300  # Default floor
         self.recognizer.dynamic_energy_threshold = True
@@ -25,6 +36,23 @@ class SpeechRecognizer:
         self.recognizer.dynamic_energy_ratio = 1.5
         self.recognizer.pause_threshold = 4.0 # Give user plenty of time to pause and think
         self.recognizer.non_speaking_duration = 2.5
+
+    def _load_speaker_verification_model(self):
+        try:
+            print("🎙️ JARVIS: Initializing Speaker Verification Core (SpeechBrain)...")
+            from speechbrain.inference.speaker import SpeakerRecognition
+            savedir = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".speechbrain_model")
+            self.speaker_model = SpeakerRecognition.from_hparams(
+                source="speechbrain/spkrec-ecapa-voxceleb",
+                savedir=savedir,
+                run_opts={"device": "cpu"}
+            )
+            print("🎙️ JARVIS: Speaker Verification Core loaded successfully.")
+        except Exception as e:
+            print(f"⚠️ [SPEECH WARNING] Failed to load Speaker Verification: {e}")
+            print("👉 Please ensure dependencies are installed via: pip install torch torchaudio speechbrain")
+            print("👉 Temporarily disabling speaker verification fallback.")
+            self.speaker_verification_enabled = False
 
     def calibrate(self):
         """Creates a fresh noise profile for the room."""
@@ -50,6 +78,34 @@ class SpeechRecognizer:
                 print("👂 Listening...")
                 # phrase_time_limit ensures he doesn't listen forever if there's static
                 audio = self.recognizer.listen(source, timeout=5, phrase_time_limit=10)
+
+                # --- 🎙️ SPEAKER VERIFICATION CHECK ---
+                if self.speaker_verification_enabled and self.speaker_model:
+                    if not os.path.exists(self.speaker_ref_path):
+                        print(f"⚠️ [SPEECH WARNING] Reference voice file '{self.speaker_ref_path}' not found.")
+                        print("👉 Please record a 5-second sample of your voice and save it as 'owner_voice_ref.wav'.")
+                        print("👉 Bypassing verification for this command.")
+                    else:
+                        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
+                            f.write(audio.get_wav_data())
+                            temp_wav_path = f.name
+                        
+                        try:
+                            score, prediction = self.speaker_model.verify_files(self.speaker_ref_path, temp_wav_path)
+                            score_val = score.item() if hasattr(score, "item") else float(score)
+                            pred_val = prediction.item() if hasattr(prediction, "item") else bool(prediction)
+                            
+                            print(f"🎙️ [BIOMETRICS] Speaker voice match score: {score_val:.4f} (Threshold: {self.speaker_threshold})")
+                            if not pred_val and score_val < self.speaker_threshold:
+                                print("🚫 [BIOMETRICS] Unauthorized speaker detected. Command ignored.")
+                                return ""  # Ignore command
+                        except Exception as ve:
+                            print(f"⚠️ [BIOMETRICS] Verification failed: {ve}")
+                        finally:
+                            try:
+                                os.unlink(temp_wav_path)
+                            except:
+                                pass
                 
                 if self.has_neural_ear:
                     # Lazy load the neural ear model on the first active voice command

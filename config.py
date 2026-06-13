@@ -45,3 +45,8 @@ OLLAMA_MODEL = "llama3"
 
 # Default local endpoint for Ollama
 OLLAMA_URL = "http://localhost:11434/api/generate"
+
+# ==================== SPEAKER VERIFICATION (BIOMETRICS) ====================
+SPEAKER_VERIFICATION_ENABLED = False  # Set to True to enable voice verification
+SPEAKER_REF_PATH = "owner_voice_ref.wav"  # Path to the owner's 5-second voice sample
+SPEAKER_THRESHOLD = 0.25  # Standard ECAPA-TDNN cosine similarity threshold
