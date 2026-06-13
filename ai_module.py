@@ -203,6 +203,17 @@ class AIBrain:
                     attempt += 1
                     continue
 
+                # 2.5 Network/DNS Connection Errors -> Do not rotate, immediately fallback to local Ollama
+                connection_errors = [
+                    "getaddrinfo", "connecterror", "connection error", "dns error", 
+                    "no connections available", "network unreachable", "socket.timeout", 
+                    "timed out", "connection refused", "failed to establish a new connection",
+                    "cannot connect"
+                ]
+                if any(x in error_msg for x in connection_errors):
+                    print("🌐 [AIBRAIN]: Network connection issue detected. Bypassing cloud API retries.")
+                    break
+
                 # 3. Other errors (429 Quota, 503 Overload, 504 Timeout, Connection/Network) -> Rotate Key and Model and retry
                 print(f"⚠️ API Error on Key #{self.current_key_index + 1} ({current_model}): {e}. Rotating key and model...")
                 self._rotate_key()

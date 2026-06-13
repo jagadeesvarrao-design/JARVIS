@@ -557,6 +557,11 @@ Return ONLY a valid JSON object matching this schema:
             import sys
             sys.exit(0)
             
+        # 1.1 Handle Sleep/Standby (Hard override)
+        if any(w in text for w in ["go to sleep", "sleep mode", "enter sleep mode", "go to standby", "standby mode", "standby"]):
+            self._respond("Entering standby mode.")
+            return False
+            
         # 1.5 Dynamic Skills Routing
         for skill in self.skills:
             try:

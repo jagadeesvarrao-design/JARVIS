@@ -86,6 +86,11 @@ To guarantee no two website or webpage builds look identical, JARVIS applies dyn
 * **Webpages**: Selects randomly from 5 pre-made responsive stylesheet classes (Stark Industries, Cyberpunk Grid, Minimalist Obsidian, Emerald Matrix, Synthwave Sunset) and spawns interactive decorative elements.
 * **Websites**: Injects dynamic aesthetic guidelines (Neo-Brutalism, Glassmorphism, Cozy Pastels, Retro Synthwave, Obsidian Minimalist, etc.) into the AI code generator prompts and PM specifications, forcing custom color palettes and typography scales.
 
+### 🌐 Resilient Offline Mode & Local Fallback (Ollama)
+* **Bypass Key Rotation**: When completely offline, JARVIS detects DNS/connection errors and immediately bypasses unnecessary Gemini API key rotation retries, preventing terminal log clutter.
+* **Local Fallback**: Automatically reroutes queries to your local Ollama engine (configured via `OLLAMA_MODEL` in `config.py`), keeping the core brain alive without an internet connection.
+* **Offline Standby Controls**: System level commands like *"go to sleep"* or *"standby"* are processed via hardcoded overrides at the top of the command processing stack, allowing standby state transitions even when both cloud and local engines are offline.
+
 ### 🧠 Persistent Vector Memory (ChromaDB)
 When commanded to *"Remember that..."*, JARVIS encodes the knowledge into vector embeddings using a local `SentenceTransformer` model and stores it inside ChromaDB. This permits semantic recall across desktop execution loops.
 
