@@ -143,7 +143,7 @@ class ApplicationController:
         except:
             try:
                 # Force Kill if AppOpener fails
-                os.system(f"taskkill /f /im {app_name}.exe")
+                os.system(f'taskkill /f /im "{app_name}.exe"')
                 return f"Terminated {app_name}"
             except:
                 return f"Could not find a running app named {app_name}."

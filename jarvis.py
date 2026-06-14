@@ -62,9 +62,9 @@ def voice_worker():
     try:
         engine = pyttsx3.init()
         voices = engine.getProperty('voices')
-        # Try to set a female or better sounding offline voice if available
+        # Try to set a male offline voice if available
         for voice in voices:
-            if "Zira" in voice.name or "Female" in voice.name:
+            if "David" in voice.name or "Male" in voice.name:
                 engine.setProperty('voice', voice.id)
                 break
         engine.setProperty('rate', 175) 
@@ -72,8 +72,14 @@ def voice_worker():
         print(f"⚠️ Failed to init pyttsx3: {e}")
     
     while True:
-        text = voice_queue.get()
-        if text is None: break
+        item = voice_queue.get()
+        if item is None: break
+        
+        if isinstance(item, tuple):
+            text, voice_override = item
+        else:
+            text = item
+            voice_override = None
         
         if stop_speech_event.is_set():
             voice_queue.task_done()
@@ -94,8 +100,7 @@ def voice_worker():
                 try:
                     # Generate Edge TTS voice file
                     async def run_tts():
-                        # We use Aria for a very human-like female voice or Guy for male
-                        voice = getattr(config, "TTS_VOICE", "en-US-AriaNeural")
+                        voice = voice_override if voice_override else getattr(config, "TTS_VOICE", "en-IN-PrabhatNeural")
                         communicate = edge_tts.Communicate(text, voice)
                         await communicate.save(temp_file)
                     
@@ -262,6 +267,7 @@ class JARVIS:
         self.models = ["gemini-2.5-pro", "gemini-2.5", "gemini-2-pro", "gemini-2", "gemini-1.5-pro", "gemini-1.5"]
         self.rec_agent = None
         self.project_agent = None
+        self.active_voice = None
         
         # Initialize Memory Globally (Lazy Loaded)
         self._memory_brain = None
@@ -300,10 +306,40 @@ class JARVIS:
             from agent_module import MemoryAgent
             self._memory_brain = MemoryAgent()
         return self._memory_brain
-    def _respond(self, text):
+    def _respond(self, text, voice=None):
         if text:
             print(f"🤖 JARVIS: {text}")
-            voice_queue.put(text)
+            # Use specified voice, or session active_voice, or default to en-IN-PrabhatNeural
+            voice_to_use = voice if voice else getattr(self, "active_voice", None)
+            
+            # Auto-detect script to match voice dynamically if no override/session voice is set
+            if not voice_to_use:
+                # Check for Telugu script characters
+                if re.search(r'[\u0C00-\u0C7F]', text):
+                    voice_to_use = "te-IN-MohanNeural"
+                # Check for Devanagari (Hindi) script characters
+                elif re.search(r'[\u0900-\u097F]', text):
+                    voice_to_use = "hi-IN-MadhurNeural"
+                # Check for Bengali script characters
+                elif re.search(r'[\u0980-\u09FF]', text):
+                    voice_to_use = "bn-IN-BashkarNeural"
+                # Check for Tamil script characters
+                elif re.search(r'[\u0B80-\u0BFF]', text):
+                    voice_to_use = "ta-IN-ValluvarNeural"
+                # Check for Kannada script characters
+                elif re.search(r'[\u0C80-\u0CFF]', text):
+                    voice_to_use = "kn-IN-GaganNeural"
+                # Check for Malayalam script characters
+                elif re.search(r'[\u0D00-\u0D7F]', text):
+                    voice_to_use = "ml-IN-MidhunNeural"
+                # Check for Gujarati script characters
+                elif re.search(r'[\u0A80-\u0AFF]', text):
+                    voice_to_use = "gu-IN-NiranjanNeural"
+
+            if voice_to_use:
+                voice_queue.put((text, voice_to_use))
+            else:
+                voice_queue.put(text)
             
             try:
                 # 1. Log to the GUI dashboard
@@ -549,6 +585,49 @@ Return ONLY a valid JSON object matching this schema:
         original_text = text
         text = text.lower()
         print(f"👤 USER: {text}")
+
+        # --- DYNAMIC INDIAN VOICE ROUTER ---
+        voice_mappings = {
+            "telugu": "te-IN-MohanNeural",
+            "hindi": "hi-IN-MadhurNeural",
+            "bengali": "bn-IN-BashkarNeural",
+            "bangla": "bn-IN-BashkarNeural",
+            "kannada": "kn-IN-GaganNeural",
+            "malayalam": "ml-IN-MidhunNeural",
+            "marathi": "mr-IN-ManoharNeural",
+            "tamil": "ta-IN-ValluvarNeural",
+            "gujarati": "gu-IN-NiranjanNeural",
+            "urdu": "ur-IN-SalmanNeural",
+            "english": "en-IN-PrabhatNeural"
+        }
+        
+        # Check for explicit language commands: "speak in <lang>", "talk in <lang>", "talk to me in <lang>"
+        lang_match = re.search(r'\b(?:talk|speak)\s+in\s+([a-z]+)\b', text)
+        if lang_match:
+            lang = lang_match.group(1)
+            if lang in voice_mappings:
+                target_voice = voice_mappings[lang]
+                if lang == "english":
+                    self.active_voice = None  # Reset to default
+                    self._respond("Sure Sir, switching back to default English voice.", voice="en-IN-PrabhatNeural")
+                else:
+                    self.active_voice = target_voice
+                    # Respond with language-specific confirmation/greeting
+                    greetings = {
+                        "telugu": "తప్పకుండా సర్, ఇకపై నేను తెలుగులో మాట్లాడతాను.",
+                        "hindi": "जी सर, अब से मैं हिंदी में बात करूँगा।",
+                        "bengali": "হ্যাঁ স্যার, এখন থেকে আমি বাংলায় কথা বলব।",
+                        "bangla": "হ্যাঁ স্যার, এখন থেকে আমি বাংলায় কথা বলব।",
+                        "tamil": "சரி சார், இனி நான் தமிழில் பேசுவேன்.",
+                        "kannada": "ಖಂಡಿತ ಸರ್, ಇನ್ನು ಮುಂದೆ ನಾನು ಕನ್ನಡದಲ್ಲಿ ಮಾತನಾಡುತ್ತೇನೆ.",
+                        "malayalam": "ശരി സർ, ഇനി ഞാൻ മലയാളത്തിൽ സംസാരിക്കാം.",
+                        "marathi": "नक्कीच सर, आतापासून मी मराठीत बोलेन.",
+                        "gujarati": "ચોક્કસ સર, હવેથી હું ગુજરાતીમાં વાત કરીશ.",
+                        "urdu": "جی سر، اب سے میں اردو میں بات کروں گا۔"
+                    }
+                    greeting = greetings.get(lang, f"Sure Sir, I will now speak in {lang.capitalize()}.")
+                    self._respond(greeting, voice=target_voice)
+                return False
         
         # 1. Handle Exit (Hard override)
         if "exit" in text or "quit" in text:
@@ -992,8 +1071,10 @@ Return ONLY a valid JSON object matching this schema:
                 return False
 
         if "close" in text and "folder" not in text:
-            self._respond(self.automation.close_app(text))
-            return False
+            word_count = len(text.split())
+            if word_count < 5:
+                self._respond(self.automation.close_app(text))
+                return False
 
         # --- Window Focus & Listing (pywinauto Upgrades) ---
         if "focus window" in text or "activate window" in text or "switch to window" in text:

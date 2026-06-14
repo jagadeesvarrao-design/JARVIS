@@ -28,6 +28,8 @@ OWNER_NAME = "Jagadees"
 WAKE_WORD = "jarvis"
 VOICE_RATE = 175
 VOICE_VOLUME = 1.0
+TTS_VOICE = "en-IN-PrabhatNeural"
+
 
 # ==================== EMAIL SETTINGS ====================
 EMAIL_USER = "jagadeesvarrao@gmail.com" 
