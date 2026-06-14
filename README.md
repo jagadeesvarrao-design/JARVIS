@@ -86,6 +86,11 @@ To guarantee no two website or webpage builds look identical, JARVIS applies dyn
 * **Webpages**: Selects randomly from 5 pre-made responsive stylesheet classes (Stark Industries, Cyberpunk Grid, Minimalist Obsidian, Emerald Matrix, Synthwave Sunset) and spawns interactive decorative elements.
 * **Websites**: Injects dynamic aesthetic guidelines (Neo-Brutalism, Glassmorphism, Cozy Pastels, Retro Synthwave, Obsidian Minimalist, etc.) into the AI code generator prompts and PM specifications, forcing custom color palettes and typography scales.
 
+### 🗣️ Multilingual Voice & Dynamic Language Routing
+* **Telugu Voice Detection & Auto-Translation**: Automatically detects Telugu script (`[\u0C00-\u0C7F]`) in user voice commands, dynamically switching the TTS voice engine to the localized Telugu voice (`te-IN-MohanNeural`).
+* **Bidirectional Speech Translation**: Integrates robust translation pipelines to translate incoming Telugu speech commands into structured English instructions for JARVIS's intent router, and then translate the English response back to natural conversational Telugu script before speaking.
+* **Dynamic Language Switcher**: Supports voice triggers such as *"speak in telugu"*, *"speak in hindi"*, etc., dynamically remapping voices to appropriate regional neural voice models (supporting Telugu, Hindi, Bengali, Tamil, Kannada, Malayalam, Marathi, Urdu, Gujarati, and English).
+
 ### 🌐 Resilient Offline Mode & Local Fallback (Ollama)
 * **Self-Healing Auto-Start**: If the local Ollama server is offline when a cloud API failure or fallback triggers, JARVIS automatically locates and launches the `ollama.exe` server in the background (hidden window) and polls the port (`11434`) for up to 10 seconds to ensure it is fully initialized before retrying your command. This ensures uninterrupted offline voice translation and command processing.
 * **Bypass Key Rotation**: When completely offline, JARVIS detects DNS/connection errors and immediately bypasses unnecessary Gemini API key rotation retries, preventing terminal log clutter.
