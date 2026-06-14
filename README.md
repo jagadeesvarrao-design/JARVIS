@@ -167,13 +167,20 @@ assistent/
 4. **Setup Environment Variables:**
    Create a `.env` file in the root directory:
    ```env
-   GEMINI_API_KEY=your_gemini_key_here
+   # Single or comma-separated list of Gemini API keys for auto-rotation
+   GEMINI_API_KEY=first_key_here,second_key_here,third_key_here
    GITHUB_TOKEN=your_github_token_here
    EMAIL_USER=your_email@gmail.com
    EMAIL_PASS=your_gmail_app_password
    ```
 
-5. **Start JARVIS:**
+5. **Advanced Configuration (config.py):**
+   Open [config.py](file:///c:/Users/DELL/OneDrive/Desktop/assistent/config.py) to customize your AI model settings:
+   * `CODING_PROVIDER`: Set to `"ollama"` to route all coding and website generation tasks locally, or `"gemini"` to use cloud APIs.
+   * `OLLAMA_MODEL`: The local model used for general-purpose chat fallbacks (defaults to `"llama3:latest"`).
+   * `OLLAMA_CODING_MODEL`: The local model used for coding tasks when offline or configured to run locally (defaults to `"qwen2.5-coder:7b"`).
+
+6. **Start JARVIS:**
    ```powershell
    .\wakeup_jarvis.bat
    ```
