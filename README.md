@@ -87,6 +87,7 @@ To guarantee no two website or webpage builds look identical, JARVIS applies dyn
 * **Websites**: Injects dynamic aesthetic guidelines (Neo-Brutalism, Glassmorphism, Cozy Pastels, Retro Synthwave, Obsidian Minimalist, etc.) into the AI code generator prompts and PM specifications, forcing custom color palettes and typography scales.
 
 ### 🌐 Resilient Offline Mode & Local Fallback (Ollama)
+* **Self-Healing Auto-Start**: If the local Ollama server is offline when a cloud API failure or fallback triggers, JARVIS automatically locates and launches the `ollama.exe` server in the background (hidden window) and polls the port (`11434`) for up to 10 seconds to ensure it is fully initialized before retrying your command. This ensures uninterrupted offline voice translation and command processing.
 * **Bypass Key Rotation**: When completely offline, JARVIS detects DNS/connection errors and immediately bypasses unnecessary Gemini API key rotation retries, preventing terminal log clutter.
 * **Local Fallback**: Automatically reroutes queries to your local Ollama engine (configured via `OLLAMA_MODEL` in `config.py`), keeping the core brain alive without an internet connection.
 * **Offline Standby Controls**: System level commands like *"go to sleep"* or *"standby"* are processed via hardcoded overrides at the top of the command processing stack, allowing standby state transitions even when both cloud and local engines are offline.
