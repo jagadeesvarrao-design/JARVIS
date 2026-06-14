@@ -144,15 +144,63 @@ class SpeechRecognizer:
                     print(f"🧠 Processing audio (Human Speech Verified)...")
                 else:
                     print(f"👂 Processing audio...")
-                # We use the Google engine but with cleaned, verified audio with 4-second timeout
+                # Run parallel English and Telugu speech recognition
+                import threading
                 import socket
-                orig_timeout = socket.getdefaulttimeout()
-                try:
-                    socket.setdefaulttimeout(4.0)
-                    query = self.recognizer.recognize_google(audio, language='en-in')
-                finally:
-                    socket.setdefaulttimeout(orig_timeout)
-                return query.lower()
+                import re
+                
+                en_result = []
+                te_result = []
+                
+                def recognize_en():
+                    orig_timeout = socket.getdefaulttimeout()
+                    try:
+                        socket.setdefaulttimeout(4.0)
+                        query = self.recognizer.recognize_google(audio, language='en-in')
+                        if query:
+                            en_result.append(query.strip())
+                    except:
+                        pass
+                    finally:
+                        socket.setdefaulttimeout(orig_timeout)
+
+                def recognize_te():
+                    orig_timeout = socket.getdefaulttimeout()
+                    try:
+                        socket.setdefaulttimeout(4.0)
+                        query = self.recognizer.recognize_google(audio, language='te-in')
+                        if query:
+                            te_result.append(query.strip())
+                    except:
+                        pass
+                    finally:
+                        socket.setdefaulttimeout(orig_timeout)
+
+                t_en = threading.Thread(target=recognize_en)
+                t_te = threading.Thread(target=recognize_te)
+                
+                t_en.start()
+                t_te.start()
+                
+                t_en.join(timeout=4.0)
+                t_te.join(timeout=4.0)
+                
+                en_text = en_result[0] if en_result else ""
+                te_text = te_result[0] if te_result else ""
+                
+                print(f"👂 [Speech recognition] en: '{en_text}' | te: '{te_text}'")
+                
+                # Check if Telugu transcription contains Telugu characters
+                if te_text and re.search(r'[\u0C00-\u0C7F]', te_text):
+                    return te_text
+                
+                if en_text:
+                    return en_text.lower()
+                elif te_text:
+                    return te_text.lower()
+                
+                import speech_recognition as sr
+                raise sr.UnknownValueError()
 
             except sr.WaitTimeoutError:
                 return None  # No one spoke

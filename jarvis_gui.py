@@ -143,7 +143,7 @@ class JarvisThread(QThread):
         else:
             self.state_signal.emit("idle")
 
-    def gui_respond(self, text):
+    def gui_respond(self, text, voice=None):
         """Called when JARVIS speaks"""
         # 1. CHECK FOR IMAGE TAGS (Regex)
         image_pattern = r"\[(?:SIMPLE_IMAGE_REQUEST|Image of|IMAGE).*?:?\s*(.*?)\]"
@@ -161,7 +161,7 @@ class JarvisThread(QThread):
         self.text_signal.emit(f"🤖 {clean_text}") 
         
         # 3. Speak (Clean text only)
-        self.original_respond(clean_text)
+        self.original_respond(clean_text, voice=voice)
 
     def gui_listen(self):
         """Called when JARVIS listens"""

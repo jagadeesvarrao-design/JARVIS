@@ -79,7 +79,51 @@ class RotatingModel:
             else:
                 return MockResponse("My local neural engine (Ollama) is offline or not responding, Sir.")
         except requests.exceptions.ConnectionError:
-            return MockResponse("Sir, my cloud connection is down and the local Ollama server is not running.")
+            print("🚀 agent_module: Local Ollama server is offline. Attempting to start it...")
+            import subprocess
+            try:
+                ollama_bin = "ollama"
+                default_path = os.path.join(os.environ.get("LOCALAPPDATA", ""), r"Programs\Ollama\ollama.exe")
+                if os.path.exists(default_path):
+                    ollama_bin = default_path
+                subprocess.Popen(
+                    [ollama_bin, "serve"],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
+                )
+                
+                # Poll port for up to 10 seconds
+                server_started = False
+                for _ in range(10):
+                    try:
+                        tags_resp = requests.get(url_tags, timeout=1.0)
+                        if tags_resp.status_code == 200:
+                            server_started = True
+                            break
+                    except requests.exceptions.ConnectionError:
+                        pass
+                    time.sleep(1.0)
+                
+                if server_started:
+                    available_models = [m["name"] for m in tags_resp.json().get("models", [])]
+                    if available_models:
+                        model_found = False
+                        for am in available_models:
+                            if resolved_model.lower() in am.lower():
+                                resolved_model = am
+                                model_found = True
+                                break
+                        if not model_found:
+                            resolved_model = available_models[0]
+                            print(f"⚠️ agent_module: Configured model '{config.OLLAMA_MODEL}' not found. Using installed model '{resolved_model}'.")
+                    else:
+                        return MockResponse("Sir, no local models are installed in Ollama. Please run 'ollama pull llama3' in your terminal.")
+                else:
+                    return MockResponse("Sir, my cloud connection is down and the local Ollama server failed to start.")
+            except Exception as launch_err:
+                print(f"❌ agent_module: Failed to launch Ollama: {launch_err}")
+                return MockResponse("Sir, my cloud connection is down and the local Ollama server is not running.")
         except Exception as te:
             print(f"⚠️ agent_module: Ollama model list check failed: {te}")
             pass
@@ -979,11 +1023,25 @@ class ProjectAgent:
     def deploy_to_internet(self, database_type=None):
         self._log("task", "🌐 HANDOVER: Initializing secure public ngrok tunnel...")
         from pyngrok import ngrok
+        import config
         ngrok.kill()
         
+        # Set Authtoken if present
+        token = getattr(config, 'NGROK_AUTHTOKEN', None)
+        if token:
+            try:
+                ngrok.set_auth_token(token)
+            except Exception as te:
+                self._log("system", f"Warning: Failed to set ngrok authtoken: {te}")
+        
         # 1. Start Tunnel
-        tunnel = ngrok.connect(5000)
-        public_url = tunnel.public_url
+        try:
+            tunnel = ngrok.connect(5000)
+            public_url = tunnel.public_url
+        except Exception as e:
+            err_msg = f"❌ Ngrok tunnel creation failed: {e}. Please ensure you have set a valid NGROK_AUTHTOKEN in your environment/dotenv file or ran 'ngrok config add-authtoken <token>'."
+            self._log("system", err_msg)
+            return None
         
         # 2. Store Port & Creds (As requested)
         info_file = os.path.join(self.project_path, "deployment_manifest.txt")

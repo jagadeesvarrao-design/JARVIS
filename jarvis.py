@@ -269,6 +269,10 @@ class JARVIS:
         self.project_agent = None
         self.active_voice = None
         
+        # Interactive Dialog Queues
+        self.waiting_for_input = False
+        self.input_queue = queue.Queue()
+        
         # Initialize Memory Globally (Lazy Loaded with thread-safe lock)
         self._memory_brain = None
         self._memory_lock = threading.Lock()
@@ -320,9 +324,16 @@ class JARVIS:
             print(f"⚠️ [SYSTEM] Background Memory Core warmup failed: {e}")
     def _respond(self, text, voice=None):
         if text:
-            print(f"🤖 JARVIS: {text}")
-            # Use specified voice, or session active_voice, or default to en-IN-PrabhatNeural
+            # Determine voice to use
             voice_to_use = voice if voice else getattr(self, "active_voice", None)
+            
+            # If we are using Telugu but response is in English, translate to Telugu script
+            if (voice_to_use == "te-IN-MohanNeural" or getattr(self, "active_voice", None) == "te-IN-MohanNeural") and not re.search(r'[\u0C00-\u0C7F]', text):
+                print(f"🤖 JARVIS (English response): {text}")
+                text = self.translate_to_telugu(text)
+                voice_to_use = "te-IN-MohanNeural"
+                
+            print(f"🤖 JARVIS: {text}")
             
             # Auto-detect script to match voice dynamically if no override/session voice is set
             if not voice_to_use:
@@ -366,12 +377,111 @@ class JARVIS:
     def _listen_for_command(self):
         return self.ears.listen()
 
-    def _force_listen(self, retries=1):
-        for _ in range(retries + 1):
-            text = self.ears.listen()
-            if text: return text
-            if _ < retries: self._respond("I didn't catch that. Please repeat.")
+    def get_user_response(self, retries=1):
+        self.waiting_for_input = True
+        
+        # Clear the queue first
+        while not self.input_queue.empty():
+            try:
+                self.input_queue.get_nowait()
+            except:
+                break
+                
+        stop_listening = None
+        try:
+            # We use the existing self.ears.microphone and self.ears.recognizer
+            with self.ears.microphone as source:
+                self.ears.recognizer.adjust_for_ambient_noise(source, duration=0.2)
+                
+            # Define callback to put recognized text to input_queue
+            def callback(recognizer, audio):
+                try:
+                    import socket
+                    import threading
+                    import re
+                    
+                    en_result = []
+                    te_result = []
+                    
+                    def rec_en():
+                        orig_timeout = socket.getdefaulttimeout()
+                        try:
+                            socket.setdefaulttimeout(4.0)
+                            query = recognizer.recognize_google(audio, language='en-in')
+                            if query:
+                                en_result.append(query.strip())
+                        except:
+                            pass
+                        finally:
+                            socket.setdefaulttimeout(orig_timeout)
+
+                    def rec_te():
+                        orig_timeout = socket.getdefaulttimeout()
+                        try:
+                            socket.setdefaulttimeout(4.0)
+                            query = recognizer.recognize_google(audio, language='te-in')
+                            if query:
+                                te_result.append(query.strip())
+                        except:
+                            pass
+                        finally:
+                            socket.setdefaulttimeout(orig_timeout)
+
+                    t_en = threading.Thread(target=rec_en)
+                    t_te = threading.Thread(target=rec_te)
+                    
+                    t_en.start()
+                    t_te.start()
+                    
+                    t_en.join(timeout=4.0)
+                    t_te.join(timeout=4.0)
+                    
+                    en_text = en_result[0] if en_result else ""
+                    te_text = te_result[0] if te_result else ""
+                    
+                    # Check if Telugu transcription contains Telugu characters
+                    if te_text and re.search(r'[\u0C00-\u0C7F]', te_text):
+                        self.input_queue.put(te_text)
+                    elif en_text:
+                        self.input_queue.put(en_text.lower())
+                    elif te_text:
+                        self.input_queue.put(te_text.lower())
+                except Exception:
+                    pass
+            
+            stop_listening = self.ears.recognizer.listen_in_background(self.ears.microphone, callback)
+        except Exception as e:
+            print(f"⚠️ Failed to start background voice listener: {e}")
+            
+        response = None
+        # Wait for up to 15 seconds (150 * 100ms) for user response
+        for _ in range(150):
+            try:
+                response = self.input_queue.get(timeout=0.1)
+                if response:
+                    break
+            except queue.Empty:
+                pass
+                
+        if stop_listening:
+            try:
+                stop_listening(wait_for_stop=False)
+            except:
+                pass
+                
+        self.waiting_for_input = False
+        
+        if response:
+            return response
+            
+        if retries > 0:
+            self._respond("I didn't catch that. Please repeat.")
+            return self.get_user_response(retries=retries - 1)
+            
         return None
+
+    def _force_listen(self, retries=1):
+        return self.get_user_response(retries=retries)
     
     def _morning_briefing(self):
         hour = int(datetime.datetime.now().hour)
@@ -573,6 +683,151 @@ class JARVIS:
         self.briefing_index = 0
         return False
 
+    def translate_to_english(self, telugu_text):
+        prompt = (
+            "You are a translation assistant for a voice command system.\n"
+            "The user spoke a command in Telugu, English, or a mix of both (Telugu-English code-switching).\n"
+            "Translate this command into a direct, concise English voice assistant command.\n"
+            "Ensure that any technical or application terms (like 'website', 'file', 'folder', 'email', 'whatsapp') are translated to standard English actions.\n"
+            "Return ONLY the English translation, with no explanation or punctuation. Example input: 'వెబ్‌సైట్ క్రియేట్ చేయి', output: 'create a website'.\n\n"
+            f"Input: {telugu_text}"
+        )
+        try:
+            response = self.brain.get_response(prompt)
+            return response.strip().lower()
+        except Exception as e:
+            print(f"⚠️ [TRANSLATION ERROR] Failed to translate Telugu command: {e}")
+            return telugu_text
+
+    def translate_to_telugu(self, english_text):
+        prompt = (
+            "You are a translation assistant for a voice command system.\n"
+            "Translate the following English assistant response into natural, polite, and conversational Telugu script.\n"
+            "Preserve any proper nouns or technical names (like 'Jarvis', 'Google', 'WhatsApp', 'Email') in their standard spoken transliterated form or in English if appropriate.\n"
+            "Return ONLY the Telugu translation without any extra formatting or explanation.\n\n"
+            f"Text: {english_text}"
+        )
+        try:
+            response = self.brain.get_response(prompt)
+            return response.strip()
+        except Exception as e:
+            print(f"⚠️ [TRANSLATION ERROR] Failed to translate response to Telugu: {e}")
+            return english_text
+
+    def interactive_website_builder(self, topic, command_text):
+        # 1. Ask for requirements
+        if not topic or topic == "New_Project":
+            self._respond("Understood, Sir. What is the topic of the website you want to create?")
+            topic = self._force_listen()
+            if not topic:
+                self._respond("No topic provided. Aborting website creation.")
+                return False
+        
+        self._respond(f"Understood, Sir. What specific requirements or features would you like to incorporate into your {topic} website?")
+        user_reqs = self._force_listen()
+        if not user_reqs:
+            self._respond("No requirements provided. Aborting website creation.")
+            return False
+            
+        from agent_module import ProjectAgent
+        self.project_agent = ProjectAgent()
+        
+        confirmed = False
+        current_reqs = user_reqs
+        final_reqs = user_reqs
+        trends = ""
+        
+        while not confirmed:
+            self._respond("Researching competitor trends and analyzing requirements, please hold...")
+            # 2. Search top 10 websites related to domain and suggest changes
+            trends = self.project_agent.research_market_trends(topic)
+            suggestions = self.project_agent.consult_and_refine_requirements(topic, current_reqs)
+            
+            # Speak / present the recommendations
+            self._respond(f"Based on my analysis of top competitor websites, here are my suggestions:\n{suggestions}\n\nDo you want to confirm these requirements and build the website? Say yes to proceed, or state your changes.")
+            
+            response = self._force_listen()
+            if not response:
+                self._respond("No response received. Proceeding with the current requirements.")
+                final_reqs = f"Website Topic: {topic}\nInitial Requirements: {current_reqs}\nCompetitor Recommendations:\n{suggestions}"
+                confirmed = True
+            elif any(w in response.lower() for w in ["yes", "confirm", "yep", "sure", "ok", "yeah"]):
+                final_reqs = f"Website Topic: {topic}\nInitial Requirements: {current_reqs}\nCompetitor Recommendations:\n{suggestions}"
+                confirmed = True
+            else:
+                self._respond("Understood. Updating requirements based on your feedback...")
+                current_reqs = f"{current_reqs}\nUser Update: {response}"
+        
+        # 3. Create the website
+        self._respond("Requirements confirmed. Initiating code generation for your full-stack Flask application...")
+        project_name = f"{topic.replace(' ', '_')}_Project"
+        
+        # Save requirements
+        self.project_agent.save_requirements(project_name, final_reqs)
+        
+        # Generate code files
+        full_context = f"Topic: {topic}. Requirements: {final_reqs}. Trends: {trends}"
+        code_files = self.project_agent.generate_initial_code(full_context)
+        if not code_files:
+            self._respond("I encountered an issue generating the initial blueprints. Retrying generation...")
+            code_files = self.project_agent.generate_initial_code(full_context)
+            if not code_files:
+                self._respond("Blueprints generation failed. Please try again.")
+                return False
+                
+        # Write files to disk
+        self.project_agent.write_code_files(code_files)
+        
+        # Generate Classified PDF Manual
+        self.project_agent.generate_project_pdf(final_reqs, trends)
+        
+        # 4. Self-healing launch
+        self._respond("Files compiled successfully. Launching server and performing database seeding...")
+        local_url = self.project_agent.launch_with_autofix()
+        
+        if "Error" in local_url or "Fatal" in local_url:
+            self._respond("The server failed to launch cleanly after self-healing attempts.")
+            return False
+            
+        # 5. Local preview and show user
+        webbrowser.open(local_url)
+        self._respond(f"Website is live locally at {local_url}. Please review the layout in your browser. Do you have any changes to make, or would you like to confirm the website?")
+        
+        # Feedback loop on local preview
+        history = final_reqs
+        while True:
+            feedback = self._force_listen()
+            if not feedback or any(w in feedback.lower() for w in ["confirm", "good", "perfect", "done", "no changes", "ok", "yes", "looks great", "looks good"]):
+                self._respond("Website design confirmed, Sir.")
+                break
+            else:
+                self._respond("Understood, Sir. Modifying code files and updating the live server...")
+                updated_code = self.project_agent.update_code(history, feedback)
+                if updated_code:
+                    self.project_agent.write_code_files(updated_code)
+                    local_url = self.project_agent.launch_with_autofix()
+                    webbrowser.open(local_url)
+                    self._respond("Website updated successfully. Please check your browser. Do you have any other changes or can we confirm the website?")
+                    history = f"{history}\nFeedback: {feedback}"
+                else:
+                    self._respond("I was unable to compile the requested updates. Please restate your feedback.")
+        
+        # 6. Ask for internet deployment
+        self._respond("Would you like me to launch the website on the internet? Say yes or no.")
+        deploy_resp = self._force_listen()
+        
+        if deploy_resp and any(w in deploy_resp.lower() for w in ["yes", "yep", "sure", "ok", "yeah"]):
+            self._respond("Understood. Deploying via ngrok tunnel...")
+            public_url = self.project_agent.deploy_to_internet()
+            if public_url:
+                webbrowser.open(public_url)
+                self._respond(f"Website successfully deployed to the internet, Sir! Access it at: {public_url}. The port and URL have been stored in the project's deployment_manifest.txt.")
+            else:
+                self._respond("Internet deployment failed. The website remains active on your local port 5000.")
+        else:
+            self._respond("Understood, Sir. I will keep the website served locally on port 5000.")
+            
+        return False
 
     def _determine_intent(self, text):
         prompt = f"""Analyze the user's command and determine the intent.
@@ -597,6 +852,20 @@ Return ONLY a valid JSON object matching this schema:
         original_text = text
         text = text.lower()
         print(f"👤 USER: {text}")
+        
+        # If waiting for interactive user response, redirect console inputs to input_queue
+        if getattr(self, 'waiting_for_input', False):
+            self.input_queue.put(original_text)
+            return True
+
+        # Check if the user's input contains Telugu script characters
+        if re.search(r'[\u0C00-\u0C7F]', original_text):
+            self.active_voice = "te-IN-MohanNeural"
+            print("🎙️ Telugu command detected. Translating...")
+            translated_text = self.translate_to_english(original_text)
+            print(f"🎙️ Translated Telugu command to English: '{translated_text}'")
+            original_text = translated_text
+            text = translated_text.lower()
 
         # --- DYNAMIC INDIAN VOICE ROUTER ---
         voice_mappings = {
@@ -674,16 +943,12 @@ Return ONLY a valid JSON object matching this schema:
         
         print(f"🧠 [ROUTER] Intent detected: {intent} | Topic: {topic}")
         
-        # Override specifically for building complex projects to use Devin-like agent
+        # Override specifically for building complex projects to use the interactive website builder
         is_site_request = bool(re.search(r'\b(build|create|design|make)\s+(?:an?\s+)?(?!.*\b(?:document|report|file|folder)\b)(?:[a-z0-9_-]+\s+){0,3}(?:website|web site|project|app)\b', text))
         if intent == "build_project" or is_site_request:
             if not topic or len(topic) < 3:
                 topic = "New_Project"
-            self._respond(f"Initializing Autonomous Iterative Agent to build {topic}...")
-            from agent_module import IterativeProjectAgent
-            self.project_agent = IterativeProjectAgent()
-            self.project_agent.execute_loop(topic, text)
-            self._respond(f"Project built successfully. Check the PROJECTS folder.")
+            self.interactive_website_builder(topic, text)
             return False
         
         # 1. Handle Exit

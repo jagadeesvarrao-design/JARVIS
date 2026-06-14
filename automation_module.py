@@ -153,40 +153,221 @@ class ApplicationController:
     # =================================================================
     def play_music(self, command):
         """
-        1. If YouTube is OPEN: Types in the search bar.
-        2. If YouTube is CLOSED: Opens the YouTube APP.
+        Searches YouTube programmatically for the song/video, applies smart query refinement
+        rules, retrieves the top video URL, and launches it directly in Microsoft Edge App Mode.
         """
-        import pyautogui
-        song = command.lower()
-        remove_words = ["play", "on youtube", "song", "music", "video", "please", "search", "for"]
-        for word in remove_words:
-            song = song.replace(word, "")
+        import urllib.request
+        import urllib.parse
+        import re
+        import os
+        import time
+        import json
+
+        def parse_published_to_days(published_text):
+            if not published_text:
+                return 99999
+            published_text = published_text.lower()
+            # Match strings like "3 weeks ago", "1 day ago", "10 hours ago", etc.
+            match = re.search(r'(\d+)\s+(second|minute|hour|day|week|month|year)s?\s+ago', published_text)
+            if not match:
+                return 99999
+            val = int(match.group(1))
+            unit = match.group(2)
+            if "second" in unit:
+                return val / (24.0 * 3600.0)
+            elif "minute" in unit:
+                return val / 1440.0
+            elif "hour" in unit:
+                return val / 24.0
+            elif "day" in unit:
+                return val
+            elif "week" in unit:
+                return val * 7
+            elif "month" in unit:
+                return val * 30
+            elif "year" in unit:
+                return val * 365
+            return 99999
+
+        def parse_views_to_number(view_text):
+            if not view_text:
+                return 0
+            # e.g., "217,649,287 views" or "169K views" or "1.5M views"
+            view_text = view_text.lower().replace(',', '').replace('views', '').strip()
+            match = re.search(r'([\d\.]+)\s*([kmb]?)', view_text)
+            if not match:
+                return 0
+            val = float(match.group(1))
+            multiplier = match.group(2)
+            if multiplier == 'k':
+                return int(val * 1000)
+            elif multiplier == 'm':
+                return int(val * 1000000)
+            elif multiplier == 'b':
+                return int(val * 100000000)
+            return int(val)
+
+        # Clean the input command
+        song = command.lower().strip()
+        # Remove prefixes like "play", "search for", "search", etc.
+        song = re.sub(r'^(play|search\s+for|search|please\s+play|please|jarvis\s+play|jarvis)\s+', '', song)
+        # Remove suffixes like "on youtube", "in youtube", "on yt", "youtube", "yt"
+        song = re.sub(r'\s+(on\s+youtube|in\s+youtube|on\s+yt|youtube|yt)$', '', song)
         song = song.strip()
         
-        if not song: return "What should I play?"
+        if not song: 
+            return "What should I play, Sir?"
 
-        # Check Active Window
-        current_window = self.get_active_window_title()
-        print(f"👀 Current Window: {current_window}")
+        # --- SMART QUERY REFINEMENT RULES ---
+        is_sad_songs = False
+        is_general_lang_songs = False
+        search_query = song
 
-        # SCENARIO A: YouTube is ALREADY on screen (Existing Window)
-        if "youtube" in current_window:
-            print("✅ YouTube is active. Using Hotkeys.")
-            pyautogui.press('/') # Focus Search Bar
-            time.sleep(0.2)
-            pyautogui.hotkey('ctrl', 'a') # Select existing text
-            pyautogui.press('backspace')  # Clear it
-            pyautogui.write(song, interval=0.05) # Type new song
-            time.sleep(0.2)
-            pyautogui.press('enter') # Search
-            return f"Searching for {song} on existing screen."
+        # Common languages list to identify language-specific queries
+        languages = [
+            'telugu', 'hindi', 'english', 'tamil', 'kannada', 'malayalam', 
+            'punjabi', 'bhojpuri', 'bengali', 'marathi', 'gujarati', 'urdu', 
+            'spanish', 'korean', 'japanese'
+        ]
 
-        # SCENARIO B: YouTube is NOT open (Launch App)
+        # Rule 1 & 2 checking
+        if re.search(r'\bsad\s+songs?\b', song):
+            is_sad_songs = True
+            search_query = song
+            print(f"🎵 Rule 2 applied: Sad songs search. Query: '{search_query}'")
+        elif "song" in song or "songs" in song or "music" in song:
+            lang = next((l for l in languages if l in song), None)
+            if lang:
+                is_general_lang_songs = True
+                search_query = f"latest new release {lang} songs"
+            else:
+                # E.g. "play songs", "play some music"
+                cleaned_words = [w for w in song.split() if w not in ["some", "a", "any", "kind", "of"]]
+                cleaned_phrase = " ".join(cleaned_words)
+                if cleaned_phrase in ["songs", "song", "music"]:
+                    is_general_lang_songs = True
+                    search_query = "latest new release songs"
+                else:
+                    search_query = song
+            print(f"🎵 Rule 1 applied: General/Language song search. Query: '{search_query}'")
         else:
-            print("🚀 YouTube not active. Launching App.")
-            search_url = f"https://www.youtube.com/results?search_query={song.replace(' ', '+')}"
-            os.system(f"start msedge --app={search_url}")
-            return f"Opening YouTube App for {song}."
+            # Rule 3: Specific song name query
+            search_query = song
+            print(f"🎵 Rule 3 applied: Specific song search. Query: '{search_query}'")
+
+        # Programmatic YouTube lookup using ytInitialData JSON
+        video_url = None
+        html = ""
+        videos = []
+        try:
+            encoded_query = urllib.parse.quote(search_query)
+            search_url = f"https://www.youtube.com/results?search_query={encoded_query}"
+            
+            req = urllib.request.Request(
+                search_url, 
+                headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0'}
+            )
+            with urllib.request.urlopen(req, timeout=5) as response:
+                html = response.read().decode('utf-8', errors='ignore')
+                
+            # Extract ytInitialData
+            match = re.search(r"var ytInitialData = (\{.*?\});", html)
+            if not match:
+                match = re.search(r"window\['ytInitialData'\] = (\{.*?\});", html)
+                
+            if match:
+                data = json.loads(match.group(1))
+                
+                # Recursive finder for videoRenderer
+                def find_videos(obj):
+                    res_vids = []
+                    if isinstance(obj, dict):
+                        if 'videoRenderer' in obj:
+                            res_vids.append(obj['videoRenderer'])
+                        for k, v in obj.items():
+                            res_vids.extend(find_videos(v))
+                    elif isinstance(obj, list):
+                        for item in obj:
+                            res_vids.extend(find_videos(item))
+                    return res_vids
+                
+                videos = find_videos(data)
+        except Exception as e:
+            print(f"⚠️ Programmatic YouTube lookup failed: {e}")
+
+        # Process found videos
+        selected_video_id = None
+        parsed_videos = []
+        
+        if videos:
+            for video in videos:
+                video_id = video.get('videoId')
+                if not video_id:
+                    continue
+                title = video.get('title', {}).get('runs', [{}])[0].get('text', 'No Title')
+                
+                view_text = video.get('viewCountText', {}).get('simpleText', '')
+                if not view_text:
+                    view_text = video.get('viewCountText', {}).get('runs', [{}])[0].get('text', '')
+                views = parse_views_to_number(view_text)
+                
+                published_text = video.get('publishedTimeText', {}).get('simpleText', '')
+                age_days = parse_published_to_days(published_text)
+                
+                parsed_videos.append({
+                    'id': video_id,
+                    'title': title,
+                    'views': views,
+                    'age_days': age_days,
+                    'published': published_text,
+                    'view_text': view_text
+                })
+
+        # Apply sorting/selection logic based on request type
+        if parsed_videos:
+            if is_sad_songs:
+                # Sort by views descending (most views first)
+                parsed_videos.sort(key=lambda x: x['views'], reverse=True)
+                selected_video_id = parsed_videos[0]['id']
+                print(f"🎯 Selected (Sad Song - Most Views): '{parsed_videos[0]['title']}' with {parsed_videos[0]['view_text']}")
+            elif is_general_lang_songs:
+                # Sort by age_days ascending (most recently released first)
+                parsed_videos.sort(key=lambda x: x['age_days'])
+                selected_video_id = parsed_videos[0]['id']
+                print(f"🎯 Selected (Language Song - Recently Released): '{parsed_videos[0]['title']}' published {parsed_videos[0]['published']}")
+            else:
+                # Specific song name -> take the first search result
+                selected_video_id = parsed_videos[0]['id']
+                print(f"🎯 Selected (Specific Song): '{parsed_videos[0]['title']}'")
+                
+            video_url = f"https://www.youtube.com/watch?v={selected_video_id}"
+
+        # Fallback to regex if parsing fails or yields no videos
+        if not video_url:
+            print("Fallback to regex matching...")
+            try:
+                video_ids = re.findall(r"watch\?v=(\S{11})", html)
+                if video_ids:
+                    # Deduplicate and pick the first unique video ID
+                    unique_ids = []
+                    for vid in video_ids:
+                        if vid not in unique_ids:
+                            unique_ids.append(vid)
+                    if unique_ids:
+                        video_url = f"https://www.youtube.com/watch?v={unique_ids[0]}"
+            except Exception as re_err:
+                print(f"⚠️ Fallback regex matching failed: {re_err}")
+
+        # Launch the video
+        if video_url:
+            print(f"🎯 Playing video URL: {video_url}")
+            os.system(f'start msedge --app="{video_url}"')
+            return f"Playing song on YouTube: {song}"
+        else:
+            # Ultimate Fallback to search results page
+            fallback_url = f"https://www.youtube.com/results?search_query={urllib.parse.quote(search_query)}"
+            os.system(f'start msedge --app="{fallback_url}"')
+            return f"Opening YouTube search results for: {song}"
 
     def type_text(self, text):
         import pyautogui

@@ -77,7 +77,51 @@ class AIBrain:
             else:
                 return "My local neural engine (Ollama) is offline or not responding, Sir."
         except requests.exceptions.ConnectionError:
-            return "Sir, my cloud connection is down and the local Ollama server is not running."
+            print("🚀 Local Ollama server is offline. Attempting to start it...")
+            import subprocess
+            try:
+                ollama_bin = "ollama"
+                default_path = os.path.join(os.environ.get("LOCALAPPDATA", ""), r"Programs\Ollama\ollama.exe")
+                if os.path.exists(default_path):
+                    ollama_bin = default_path
+                subprocess.Popen(
+                    [ollama_bin, "serve"],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
+                )
+                
+                # Poll port for up to 10 seconds
+                server_started = False
+                for _ in range(10):
+                    try:
+                        tags_resp = requests.get(url_tags, timeout=1.0)
+                        if tags_resp.status_code == 200:
+                            server_started = True
+                            break
+                    except requests.exceptions.ConnectionError:
+                        pass
+                    time.sleep(1.0)
+                
+                if server_started:
+                    available_models = [m["name"] for m in tags_resp.json().get("models", [])]
+                    if available_models:
+                        model_found = False
+                        for am in available_models:
+                            if resolved_model.lower() in am.lower():
+                                resolved_model = am
+                                model_found = True
+                                break
+                        if not model_found:
+                            resolved_model = available_models[0]
+                            print(f"⚠️ Configured model '{config.OLLAMA_MODEL}' not found. Using installed model '{resolved_model}'.")
+                    else:
+                        return "Sir, no local models are installed in Ollama. Please run 'ollama pull llama3' in your terminal."
+                else:
+                    return "Sir, my cloud connection is down and the local Ollama server failed to start."
+            except Exception as launch_err:
+                print(f"❌ Failed to launch Ollama: {launch_err}")
+                return "Sir, my cloud connection is down and the local Ollama server is not running."
         except Exception as te:
             print(f"⚠️ Ollama model list check failed: {te}")
             pass

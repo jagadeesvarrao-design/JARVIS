@@ -51,4 +51,8 @@ OLLAMA_URL = "http://localhost:11434/api/generate"
 # ==================== SPEAKER VERIFICATION (BIOMETRICS) ====================
 SPEAKER_VERIFICATION_ENABLED = False  # Set to True to enable voice verification
 SPEAKER_REF_PATH = "owner_voice_ref.wav"  # Path to the owner's 5-second voice sample
-SPEAKER_THRESHOLD = 0.25  # Standard ECAPA-TDNN cosine similarity threshold
+SPEAKER_THRESHOLD = 0.25  # Standard ECAPA-TDNN cosine similarity threshold
+
+# ==================== DEPLOYMENT ====================
+NGROK_AUTHTOKEN = os.getenv("NGROK_AUTHTOKEN")
+
