@@ -91,10 +91,13 @@ To guarantee no two website or webpage builds look identical, JARVIS applies dyn
 * **Bidirectional Speech Translation**: Integrates robust translation pipelines to translate incoming Telugu speech commands into structured English instructions for JARVIS's intent router, and then translate the English response back to natural conversational Telugu script before speaking.
 * **Dynamic Language Switcher**: Supports voice triggers such as *"speak in telugu"*, *"speak in hindi"*, etc., dynamically remapping voices to appropriate regional neural voice models (supporting Telugu, Hindi, Bengali, Tamil, Kannada, Malayalam, Marathi, Urdu, Gujarati, and English).
 
-### 🌐 Resilient Offline Mode & Local Fallback (Ollama)
-* **Self-Healing Auto-Start**: If the local Ollama server is offline when a cloud API failure or fallback triggers, JARVIS automatically locates and launches the `ollama.exe` server in the background (hidden window) and polls the port (`11434`) for up to 10 seconds to ensure it is fully initialized before retrying your command. This ensures uninterrupted offline voice translation and command processing.
+### 🌐 Resilient Offline Mode, Multi-Key Pool & Local Fallback (Ollama)
+* **Multi-Key API Pool & Auto-Rotation**: Support for a comma-separated list of Gemini API keys under `GEMINI_API_KEY` in `.env`. When the active key hits the 18 requests-per-minute (RPM) safety threshold or returns a `429 Quota Exceeded` error, JARVIS automatically rotates to the next key in the pool, ensuring uninterrupted cloud services.
+* **Separated Local Dual-Model Architecture (Ollama)**: Automatically splits offline fallback and coding duties:
+  - **General conversational queries** route to **`llama3:latest`** (configured via `OLLAMA_MODEL`).
+  - **Autonomous coding & website builds** route directly to the highly optimized **`qwen2.5-coder:7b`** (configured via `OLLAMA_CODING_MODEL`).
+* **Self-Healing Auto-Start**: If the local Ollama server is offline when a cloud API failure or fallback triggers, JARVIS automatically locates and launches the `ollama.exe` server in the background (hidden window) and polls the port (`11434`) for up to 10 seconds to ensure it is fully initialized before retrying your command.
 * **Bypass Key Rotation**: When completely offline, JARVIS detects DNS/connection errors and immediately bypasses unnecessary Gemini API key rotation retries, preventing terminal log clutter.
-* **Local Fallback**: Automatically reroutes queries to your local Ollama engine (configured via `OLLAMA_MODEL` in `config.py`), keeping the core brain alive without an internet connection.
 * **Offline Standby Controls**: System level commands like *"go to sleep"* or *"standby"* are processed via hardcoded overrides at the top of the command processing stack, allowing standby state transitions even when both cloud and local engines are offline.
 
 ### 🧠 Persistent Vector Memory (ChromaDB)
