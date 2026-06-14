@@ -8,7 +8,10 @@ GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
 API_KEYS_POOL = []
 _env_key = os.getenv("GEMINI_API_KEY")
 if _env_key:
-    API_KEYS_POOL.append(_env_key)
+    for key in _env_key.split(","):
+        clean_key = key.strip()
+        if clean_key and clean_key not in API_KEYS_POOL:
+            API_KEYS_POOL.append(clean_key)
 
 _fallbacks = []
 for _k in _fallbacks:
@@ -42,11 +45,19 @@ SMTP_PORT = 465
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # ==================== LOCAL AI FALLBACK (OLLAMA) ====================
-# The model you downloaded via command prompt
-OLLAMA_MODEL = "llama3"
+# General purpose local fallback model
+OLLAMA_MODEL = "llama3:latest"
+
+# Dedicated local coding model (e.g. qwen2.5-coder:7b, deepseek-coder:6.7b)
+OLLAMA_CODING_MODEL = "qwen2.5-coder:7b"
 
 # Default local endpoint for Ollama
 OLLAMA_URL = "http://localhost:11434/api/generate"
+
+# ==================== CODING AGENT CONFIGURATION ====================
+# Provider options: "gemini" or "ollama" (local)
+CODING_PROVIDER = "ollama"
+
 
 # ==================== SPEAKER VERIFICATION (BIOMETRICS) ====================
 SPEAKER_VERIFICATION_ENABLED = False  # Set to True to enable voice verification

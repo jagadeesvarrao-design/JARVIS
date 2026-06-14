@@ -24,6 +24,14 @@ class RotatingModel:
         self.fallback_name = fallback_name
 
     def generate_content(self, contents):
+        import config
+        # Check if the project agent wants to route coding tasks through local Ollama
+        coding_provider = getattr(config, 'CODING_PROVIDER', 'gemini').lower()
+        if coding_provider == 'ollama':
+            model_to_use = getattr(config, 'OLLAMA_CODING_MODEL', 'qwen2.5-coder:7b')
+            print(f"🚀 agent_module: Routing coding task directly to local Ollama model '{model_to_use}'...")
+            return self._call_local_ollama(contents, model_to_use)
+
         import google.generativeai as genai
         from config import API_KEYS_POOL
         
@@ -53,13 +61,18 @@ class RotatingModel:
                 
         # --- OLLAMA FALLBACK ROUTER ---
         print("⚠️ WARNING: agent_module: Cloud API unreachable. Rerouting to Local Neural Engine (Ollama)...")
+        return self._call_local_ollama(contents)
+
+    def _call_local_ollama(self, contents, model_name=None):
         import requests
         import config
         import identity
+        import os
+        import time
         
         # Self-healing model resolution: check what models are available locally
         url_tags = config.OLLAMA_URL.replace("/api/generate", "/api/tags")
-        resolved_model = config.OLLAMA_MODEL
+        resolved_model = model_name if model_name else config.OLLAMA_MODEL
         try:
             tags_resp = requests.get(url_tags, timeout=3.0)
             if tags_resp.status_code == 200:
@@ -73,7 +86,7 @@ class RotatingModel:
                             break
                     if not model_found:
                         resolved_model = available_models[0]
-                        print(f"⚠️ agent_module: Configured model '{config.OLLAMA_MODEL}' not found. Using installed model '{resolved_model}'.")
+                        print(f"⚠️ agent_module: Configured model '{resolved_model}' not found. Using installed model '{resolved_model}'.")
                 else:
                     return MockResponse("Sir, no local models are installed in Ollama. Please run 'ollama pull llama3' in your terminal.")
             else:
@@ -116,7 +129,7 @@ class RotatingModel:
                                 break
                         if not model_found:
                             resolved_model = available_models[0]
-                            print(f"⚠️ agent_module: Configured model '{config.OLLAMA_MODEL}' not found. Using installed model '{resolved_model}'.")
+                            print(f"⚠️ agent_module: Configured model '{resolved_model}' not found. Using installed model '{resolved_model}'.")
                     else:
                         return MockResponse("Sir, no local models are installed in Ollama. Please run 'ollama pull llama3' in your terminal.")
                 else:
@@ -146,7 +159,7 @@ class RotatingModel:
         }
         
         try:
-            response = requests.post(config.OLLAMA_URL, json=payload, timeout=30)
+            response = requests.post(config.OLLAMA_URL, json=payload, timeout=60.0)
             if response.status_code == 200:
                 answer = response.json().get("response", "I could not generate a thought, Sir.")
                 return MockResponse(answer.strip())
