@@ -269,8 +269,12 @@ class JARVIS:
         self.project_agent = None
         self.active_voice = None
         
-        # Initialize Memory Globally (Lazy Loaded)
+        # Initialize Memory Globally (Lazy Loaded with thread-safe lock)
         self._memory_brain = None
+        self._memory_lock = threading.Lock()
+        
+        # Start background thread to warm up ChromaDB/PyTorch Memory Core
+        threading.Thread(target=self._warm_up_memory, daemon=True, name="MemoryWarmupThread").start()
         
         # Dynamic Skills System initialization
         self.skills = []
@@ -301,11 +305,19 @@ class JARVIS:
 
     @property
     def memory_brain(self):
-        if self._memory_brain is None:
-            print("🧠 [SYSTEM]: Lazily Initializing Memory Core (ChromaDB)...")
-            from agent_module import MemoryAgent
-            self._memory_brain = MemoryAgent()
-        return self._memory_brain
+        with self._memory_lock:
+            if self._memory_brain is None:
+                print("🧠 [SYSTEM]: Lazily Initializing Memory Core (ChromaDB)...")
+                from agent_module import MemoryAgent
+                self._memory_brain = MemoryAgent()
+            return self._memory_brain
+
+    def _warm_up_memory(self):
+        try:
+            # Access property to trigger background initialization
+            _ = self.memory_brain
+        except Exception as e:
+            print(f"⚠️ [SYSTEM] Background Memory Core warmup failed: {e}")
     def _respond(self, text, voice=None):
         if text:
             print(f"🤖 JARVIS: {text}")

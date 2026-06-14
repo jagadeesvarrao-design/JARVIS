@@ -23,6 +23,9 @@ class ProactiveAgent:
         self.last_analyzed_error = None
         self.last_cpu_warning_time = 0
         
+        # Initialize psutil CPU reference point to prevent blocking calls later
+        psutil.cpu_percent(interval=None)
+        
         schedule.every().day.at("09:00").do(self.morning_briefing)
         schedule.every(30).minutes.do(self.drink_water_reminder)
 
@@ -83,7 +86,7 @@ class ProactiveAgent:
         self.last_battery = battery.percent if battery else 100
 
         # 2. High CPU Usage (Heavy Load)
-        cpu_usage = psutil.cpu_percent(interval=1)
+        cpu_usage = psutil.cpu_percent(interval=None)
         if cpu_usage > 85:
             # Check cooldown (10 minutes = 600 seconds)
             if time.time() - getattr(self, "last_cpu_warning_time", 0) > 600:
