@@ -264,7 +264,7 @@ class JARVIS:
         
         self.attachment_path = None
         self.last_topic = None 
-        self.models = ["gemini-2.5-pro", "gemini-2.5", "gemini-2-pro", "gemini-2", "gemini-1.5-pro", "gemini-1.5"]
+        self.models = ["gemini-2.5-flash-lite", "gemini-2.5-flash", "gemini-2.5-pro"]
         self.rec_agent = None
         self.project_agent = None
         self.active_voice = None

@@ -18,10 +18,11 @@ for _k in _fallbacks:
     if _k not in API_KEYS_POOL:
         API_KEYS_POOL.append(_k)
 # Preferred models for 2026. Non-flash models or legacy 2.0-flash (restricted quota) are omitted/placed last.
-AI_MODELS = ["gemini-3.5-flash",
-             "gemini-2.5-flash",
-             "gemini-2.5-flash-lite"
-             ]
+AI_MODELS = [
+    "gemini-2.5-flash-lite",
+    "gemini-2.5-flash",
+    "gemini-2.5-pro"
+]
 
 # ==================== IDENTITY ====================
 AI_NAME = "Jarvis"

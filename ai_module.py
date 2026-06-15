@@ -22,7 +22,7 @@ class AIBrain:
         try:
             self.models = config.AI_MODELS
         except AttributeError:
-            self.models = ["gemini-2.5-flash-lite", "gemini-2.5-flash"]
+            self.models = ["gemini-2.5-flash-lite", "gemini-2.5-flash", "gemini-2.5-pro"]
             
         self.current_model_index = 0
         self._connect_client()

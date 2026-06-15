@@ -172,8 +172,8 @@ class RotatingModel:
         except Exception as e:
             return MockResponse(f"Local Engine Error: {e}")
 
-# ✅ PRIMARY MODEL: Gemini 3.5 Flash (Standard for 2026)
-model = RotatingModel('gemini-3.5-flash', 'gemini-2.5-flash-lite')
+# ✅ PRIMARY MODEL: Gemini 2.5 Flash
+model = RotatingModel('gemini-2.5-flash', 'gemini-2.5-flash-lite')
 
 # ✅ FALLBACK MODEL: Gemini 2.5 Flash-Lite (Legacy Backup)
 fallback_model = RotatingModel('gemini-2.5-flash-lite', 'gemini-2.5-flash')
@@ -1397,7 +1397,7 @@ class GeneralistAgent:
             
             # 1. LINK TO YOUR API KEY & MODEL
             self.interpreter.llm.api_key = API_KEYS_POOL
-            self.interpreter.llm.model = "gemini-2.0-flash" # Use the smartest model for logic
+            self.interpreter.llm.model = "gemini-2.5-pro" # Use the smartest model for logic
             
             # 2. SECURITY PROTOCOL (THE LIMITER)
             self.interpreter.auto_run = False  # CRITICAL: Forces user approval for every step

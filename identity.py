@@ -18,7 +18,7 @@ PERSONALITY = (
 
 # The Tech Stack (How he works)
 SYSTEM_ARCHITECTURE = [
-    "Brain: Google Gemini 1.5 Flash (Neural Network)",
+    "Brain: Google Gemini 2.5 Family (Neural Network)",
     "Voice: SpeechRecognition & Pyttsx3",
     "Vision: OpenCV & MediaPipe (Hand Gestures)",
     "Automation: PyAutoGUI (Keyboard/Mouse) & OS Module",
