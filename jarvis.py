@@ -465,7 +465,7 @@ class JARVIS:
                 
         if stop_listening:
             try:
-                stop_listening(wait_for_stop=False)
+                stop_listening(wait_for_stop=True)
             except:
                 pass
                 

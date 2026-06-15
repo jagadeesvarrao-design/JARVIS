@@ -26,8 +26,9 @@ class ProactiveAgent:
         # Initialize psutil CPU reference point to prevent blocking calls later
         psutil.cpu_percent(interval=None)
         
-        schedule.every().day.at("09:00").do(self.morning_briefing)
-        schedule.every(30).minutes.do(self.drink_water_reminder)
+        self.scheduler = schedule.Scheduler()
+        self.scheduler.every().day.at("09:00").do(self.morning_briefing)
+        self.scheduler.every(30).minutes.do(self.drink_water_reminder)
 
     def speak(self, text):
         """Separate speaking channel for background alerts"""
@@ -153,7 +154,7 @@ class ProactiveAgent:
         self.speak("Proactive Systems Engaged.")
         while self.running:
             # 1. Run Schedules (Time-based routines)
-            schedule.run_pending()
+            self.scheduler.run_pending()
             
             # 2. Check Hardware
             self.check_system_health()
