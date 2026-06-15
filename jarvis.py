@@ -1855,14 +1855,18 @@ Return ONLY a valid JSON object matching this schema:
         print(f"💤 Standby Mode. Say '{WAKE_WORD}' to wake me up...")
         
         wake_recognizer = sr.Recognizer()
+        wake_microphone = None
         
         while True:
             try:
+                if wake_microphone is None:
+                    wake_microphone = sr.Microphone()
+                
                 try:
                     voice_queue.join()
                 except Exception:
                     pass
-                with sr.Microphone() as source:
+                with wake_microphone as source:
                     wake_recognizer.adjust_for_ambient_noise(source, duration=0.5)
                     try:
                         audio = wake_recognizer.listen(source, timeout=5, phrase_time_limit=3)
@@ -1876,6 +1880,8 @@ Return ONLY a valid JSON object matching this schema:
                         text = ""
 
             except Exception as e:
+                print(f"⚠️ [STANDBY ERROR]: {e}")
+                wake_microphone = None
                 time.sleep(1)
                 text = ""
 
