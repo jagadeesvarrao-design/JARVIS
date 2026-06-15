@@ -128,16 +128,17 @@ st.markdown("---")
 main_col, stat_col = st.columns([2, 1])
 
 # --- LOG FILE READER ---
-log_file = "jarvis_logs.json"
+log_file = "jarvis_logs.jsonl"
 logs = []
 if os.path.exists(log_file):
     try:
-        with open(log_file, "r") as f:
-            content = f.read().strip()
-            if content:
-                logs = json.loads(content)
-                logs = logs[::-1] # Newest on top
-    except:
+        with open(log_file, "r", encoding="utf-8") as f:
+            for line in f:
+                line_str = line.strip()
+                if line_str:
+                    logs.append(json.loads(line_str))
+        logs = logs[::-1] # Newest on top
+    except Exception:
         logs = []
 
 # --- 1. LEFT COLUMN: LIVE FEED ---
@@ -198,8 +199,11 @@ with stat_col:
     st.markdown("---")
     st.write("### 🛑 OVERRIDE")
     if st.button("PURGE LOGS"):
-        with open(log_file, "w") as f:
-            json.dump([], f)
+        try:
+            with open(log_file, "w", encoding="utf-8") as f:
+                f.write("")
+        except Exception:
+            pass
         st.rerun()
 
 # --- AUTO REFRESH LOOP (Every 1s) ---

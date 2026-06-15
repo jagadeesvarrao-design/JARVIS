@@ -70,35 +70,31 @@ class HologramPopup(QDialog):
 # 📊 DASHBOARD LOGGER
 # ========================================================
 def log_to_dashboard(type, message):
-    """Writes logs to jarvis_logs.json for the Streamlit Dashboard"""
-    log_file = "jarvis_logs.json"
+    """Writes logs to jarvis_logs.jsonl for the Streamlit Dashboard"""
+    log_file = "jarvis_logs.jsonl"
     entry = {
         "timestamp": datetime.datetime.now().strftime("%H:%M:%S"),
         "type": type, # "user", "jarvis", or "task"
         "message": message
     }
     
-    data = []
-    if os.path.exists(log_file):
-        try:
-            with open(log_file, "r") as f:
-                content = f.read().strip()
-                if content:
-                    data = json.loads(content)
-        except: pass
-        
-    data.append(entry)
-    
-    # Keep only last 50 logs to prevent lag
-    if len(data) > 50: data = data[-50:]
-        
-    tmp_file = log_file + ".tmp"
+    # Append the new log entry
     try:
-        with open(tmp_file, "w") as f:
-            json.dump(data, f, indent=4)
-        os.replace(tmp_file, log_file)
+        with open(log_file, "a", encoding="utf-8") as f:
+            f.write(json.dumps(entry) + "\n")
     except Exception as e:
         print(f"Error writing dashboard log: {e}")
+        
+    # Bounded truncation: only read/write when file grows past 100 lines
+    try:
+        if os.path.exists(log_file):
+            with open(log_file, "r", encoding="utf-8") as f:
+                lines = f.readlines()
+            if len(lines) > 100:
+                with open(log_file, "w", encoding="utf-8") as f:
+                    f.writelines(lines[-50:])
+    except Exception as e:
+        print(f"Error truncating dashboard log: {e}")
 
 # ========================================================
 # 🔧 WORKER THREAD (Backend Connection + Audio Fix)

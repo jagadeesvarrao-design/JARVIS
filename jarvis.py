@@ -71,100 +71,107 @@ def voice_worker():
     except Exception as e:
         print(f"⚠️ Failed to init pyttsx3: {e}")
     
-    while True:
-        item = voice_queue.get()
-        if item is None: break
-        
-        if isinstance(item, tuple):
-            text, voice_override = item
-        else:
-            text = item
-            voice_override = None
-        
-        if stop_speech_event.is_set():
-            voice_queue.task_done()
-            stop_speech_event.clear()
-            continue
+    # Initialize persistent event loop for asyncio tasks
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    
+    try:
+        while True:
+            item = voice_queue.get()
+            if item is None: break
             
-        global speaking_callback, use_edge_tts
-        if speaking_callback:
-            try:
-                speaking_callback(True)
-            except Exception:
-                pass
-                
-        try:
-            temp_file = f"speech_temp_{int(time.time())}.mp3"
-            success = False
-            if use_edge_tts:
-                try:
-                    # Generate Edge TTS voice file
-                    async def run_tts():
-                        voice = voice_override if voice_override else getattr(config, "TTS_VOICE", "en-IN-PrabhatNeural")
-                        communicate = edge_tts.Communicate(text, voice)
-                        await communicate.save(temp_file)
-                    
-                    loop = asyncio.new_event_loop()
-                    asyncio.set_event_loop(loop)
-                    loop.run_until_complete(asyncio.wait_for(run_tts(), timeout=4.0))
-                    loop.close()
-                    success = True
-                except Exception as e:
-                    print(f"⚠️ Edge TTS failed: {e}. Falling back to pyttsx3.")
-                    success = False
-                    # Network or resolution errors disable Edge TTS for this session
-                    err_str = str(e).lower()
-                    if "connection" in err_str or "getaddrinfo" in err_str or "timeout" in err_str or "unreachable" in err_str:
-                        print("🌐 [SPEECH SYSTEM]: Network issues detected. Disabling Edge TTS for this session to prevent lagging.")
-                        use_edge_tts = False
-                
-            if success and os.path.exists(temp_file):
-                try:
-                    # Play using Pygame
-                    pygame.mixer.music.load(temp_file)
-                    pygame.mixer.music.play()
-                    
-                    while pygame.mixer.music.get_busy():
-                        time.sleep(0.05)
-                        if stop_speech_event.is_set():
-                            pygame.mixer.music.stop()
-                            break
-                            
-                    pygame.mixer.music.unload()
-                    # Clean up temporary file
-                    try:
-                        os.remove(temp_file)
-                    except:
-                        pass
-                except Exception as pe:
-                    print(f"⚠️ Pygame Playback Error: {pe}. Falling back to pyttsx3.")
-                    # Fallback speech
-                    if engine:
-                        engine.say(text)
-                        engine.runAndWait()
+            if isinstance(item, tuple):
+                text, voice_override = item
             else:
-                # Fallback speech
-                if engine:
-                    engine.say(text)
-                    engine.runAndWait()
-        finally:
+                text = item
+                voice_override = None
+            
+            if stop_speech_event.is_set():
+                voice_queue.task_done()
+                stop_speech_event.clear()
+                continue
+                
+            global speaking_callback, use_edge_tts
             if speaking_callback:
                 try:
-                    speaking_callback(False)
+                    speaking_callback(True)
                 except Exception:
                     pass
                     
-        # Handle post-speech queue clearing if stopped
-        if stop_speech_event.is_set():
-            while not voice_queue.empty():
-                try:
-                    voice_queue.get_nowait()
-                    voice_queue.task_done()
-                except:
-                    break
-            stop_speech_event.clear()
-            
-        voice_queue.task_done()
+            try:
+                temp_file = f"speech_temp_{int(time.time())}.mp3"
+                success = False
+                if use_edge_tts:
+                    try:
+                        # Generate Edge TTS voice file
+                        async def run_tts():
+                            voice = voice_override if voice_override else getattr(config, "TTS_VOICE", "en-IN-PrabhatNeural")
+                            communicate = edge_tts.Communicate(text, voice)
+                            await communicate.save(temp_file)
+                        
+                        loop.run_until_complete(asyncio.wait_for(run_tts(), timeout=4.0))
+                        success = True
+                    except Exception as e:
+                        print(f"⚠️ Edge TTS failed: {e}. Falling back to pyttsx3.")
+                        success = False
+                        # Network or resolution errors disable Edge TTS for this session
+                        err_str = str(e).lower()
+                        if "connection" in err_str or "getaddrinfo" in err_str or "timeout" in err_str or "unreachable" in err_str:
+                            print("🌐 [SPEECH SYSTEM]: Network issues detected. Disabling Edge TTS for this session to prevent lagging.")
+                            use_edge_tts = False
+                        
+                    if success and os.path.exists(temp_file):
+                        try:
+                            # Play using Pygame
+                            pygame.mixer.music.load(temp_file)
+                            pygame.mixer.music.play()
+                            
+                            while pygame.mixer.music.get_busy():
+                                time.sleep(0.05)
+                                if stop_speech_event.is_set():
+                                    pygame.mixer.music.stop()
+                                    break
+                                    
+                            pygame.mixer.music.unload()
+                            # Clean up temporary file
+                            try:
+                                os.remove(temp_file)
+                            except Exception:
+                                pass
+                        except Exception as pe:
+                            print(f"⚠️ Pygame Playback Error: {pe}. Falling back to pyttsx3.")
+                            # Fallback speech
+                            if engine:
+                                engine.say(text)
+                                engine.runAndWait()
+                    else:
+                        # Fallback speech
+                        if engine:
+                            engine.say(text)
+                            engine.runAndWait()
+            finally:
+                if speaking_callback:
+                    try:
+                        speaking_callback(False)
+                    except Exception:
+                        pass
+                        
+            # Handle post-speech queue clearing if stopped
+            if stop_speech_event.is_set():
+                while not voice_queue.empty():
+                    try:
+                        voice_queue.get_nowait()
+                        voice_queue.task_done()
+                    except Exception:
+                        break
+                stop_speech_event.clear()
+                
+            voice_queue.task_done()
+    finally:
+        try:
+            loop.close()
+        except Exception:
+            pass
 
 # Start the voice worker thread in the background
 voice_thread = threading.Thread(target=voice_worker, name="VoiceWorker", daemon=True)
@@ -173,33 +180,30 @@ voice_thread.start()
 
 # --- DASHBOARD LOGGER ---
 def log_to_dashboard(type, message):
-    log_file = "jarvis_logs.json"
+    log_file = "jarvis_logs.jsonl"
     entry = {
         "timestamp": datetime.datetime.now().strftime("%H:%M:%S"),
         "type": type, 
         "message": message
     }
     
-    data = []
-    if os.path.exists(log_file):
-        try:
-            with open(log_file, "r") as f:
-                content = f.read().strip()
-                if content:
-                    data = json.loads(content)
-        except: pass
-        
-    data.append(entry)
-    
-    if len(data) > 50: data = data[-50:]
-        
-    tmp_file = log_file + ".tmp"
+    # Append the new log entry
     try:
-        with open(tmp_file, "w") as f:
-            json.dump(data, f, indent=4)
-        os.replace(tmp_file, log_file)
+        with open(log_file, "a", encoding="utf-8") as f:
+            f.write(json.dumps(entry) + "\n")
     except Exception as e:
         print(f"Error writing dashboard log: {e}")
+        
+    # Bounded truncation: only read/write when file grows past 100 lines
+    try:
+        if os.path.exists(log_file):
+            with open(log_file, "r", encoding="utf-8") as f:
+                lines = f.readlines()
+            if len(lines) > 100:
+                with open(log_file, "w", encoding="utf-8") as f:
+                    f.writelines(lines[-50:])
+    except Exception as e:
+        print(f"Error truncating dashboard log: {e}")
 
 # --- PATH FINDER ---
 def get_desktop_path():
@@ -373,7 +377,6 @@ class JARVIS:
         try:
             winsound.Beep(1200, 150)       
         except: pass
-    
     def _listen_for_command(self):
         return self.ears.listen()
 
@@ -384,7 +387,9 @@ class JARVIS:
         while not self.input_queue.empty():
             try:
                 self.input_queue.get_nowait()
-            except:
+            except queue.Empty:
+                break
+            except Exception:
                 break
                 
         stop_listening = None
@@ -410,11 +415,11 @@ class JARVIS:
                             query = recognizer.recognize_google(audio, language='en-in')
                             if query:
                                 en_result.append(query.strip())
-                        except:
+                        except Exception:
                             pass
                         finally:
                             socket.setdefaulttimeout(orig_timeout)
-
+ 
                     def rec_te():
                         orig_timeout = socket.getdefaulttimeout()
                         try:
@@ -422,11 +427,11 @@ class JARVIS:
                             query = recognizer.recognize_google(audio, language='te-in')
                             if query:
                                 te_result.append(query.strip())
-                        except:
+                        except Exception:
                             pass
                         finally:
                             socket.setdefaulttimeout(orig_timeout)
-
+ 
                     t_en = threading.Thread(target=rec_en)
                     t_te = threading.Thread(target=rec_te)
                     
@@ -466,7 +471,7 @@ class JARVIS:
         if stop_listening:
             try:
                 stop_listening(wait_for_stop=True)
-            except:
+            except Exception:
                 pass
                 
         self.waiting_for_input = False

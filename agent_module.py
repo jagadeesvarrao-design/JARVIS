@@ -599,28 +599,33 @@ class ProjectAgent:
         try:
             safe_msg = message.encode('ascii', 'ignore').decode('ascii')
             print(f"[{log_type.upper()}] {safe_msg}")
-        except:
+        except Exception:
             print(f"[{log_type.upper()}] [Message format stripped for terminal safety]")
             
-        log_file = "jarvis_logs.json"
+        log_file = "jarvis_logs.jsonl"
         entry = {
             "timestamp": time.strftime("%H:%M:%S"),
             "type": log_type, # "user", "jarvis", "task", "system"
             "message": f"🤖 [BUILD]: {message}" if log_type == "jarvis" else message
         }
-        data = []
-        if os.path.exists(log_file):
-            try:
-                with open(log_file, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-            except: pass
-        data.append(entry)
-        if len(data) > 50: data = data[-50:]
+        
+        # Append the new log entry
         try:
-            with open(log_file, "w", encoding="utf-8") as f:
-                json.dump(data, f, indent=4)
+            with open(log_file, "a", encoding="utf-8") as f:
+                f.write(json.dumps(entry) + "\n")
         except Exception as e:
             print(f"⚠️ Telemetry logger failure: {e}")
+            
+        # Bounded truncation: only read/write when file grows past 100 lines
+        try:
+            if os.path.exists(log_file):
+                with open(log_file, "r", encoding="utf-8") as f:
+                    lines = f.readlines()
+                if len(lines) > 100:
+                    with open(log_file, "w", encoding="utf-8") as f:
+                        f.writelines(lines[-50:])
+        except Exception as e:
+            print(f"⚠️ Telemetry logger truncation failure: {e}")
 
     # --- [STEP 3] MARKET ANALYSIS & REFINEMENT ---
     def consult_and_refine_requirements(self, topic, initial_reqs):
