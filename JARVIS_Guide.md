@@ -128,6 +128,30 @@ JARVIS interacts directly with your Desktop (`C:\Users\DELL\OneDrive\Desktop`):
 
 ---
 
+### 11. Operator Persona & Presets (Self-Learning)
+
+JARVIS features a background self-learning engine that tracks user conversational styles and topics silently.
+
+| Action | Vocal Trigger / Command | Detail |
+| :--- | :--- | :--- |
+| **Speak Introduction** | `"tell me about yourself"`, `"who are you"`, `"speak a brief about yourself"` | Reads codebase structure, active custom skills, configuration states, and capabilities manual to formulate a custom butler-style self-introduction. |
+| **Set Preset** | `"set preset [adaptive\|witty butler\|minimalist\|conversational\|technical]"` | Automatically adjusts system prompt guidelines and constraints to the selected preset. Defaults to `adaptive` style (uses operator profile). |
+| **Show Operator Profile** | `"show my profile"`, `"who am i to you"`, `"what have you learned about me"` | JARVIS speaks a summary report detailing the active preset, detected conversational style, top topic frequency, and interaction habits. |
+| **Line-Length Constraints** | *(Automatic)* | Simple queries (general facts, country profiles, basic greeting chit-chat) are constrained exactly to 3–6 lines. Complex queries (coding, debug, architecture design) are programmatically constrained to less than 12 lines (max 11 lines). |
+
+---
+
+### 12. Smart E-Commerce Shopper (Indian Market)
+
+JARVIS includes a shopping agent configured exclusively to find the best prices on Indian e-commerce sites.
+
+| Action | Vocal Trigger / Command | Detail |
+| :--- | :--- | :--- |
+| **Price Comparison** | `"buy [item]"`, `"find lowest price of [item]"`, `"check price of [item]"` | Suffixes search queries with `"price India"`. Compares prices on verified Indian domains (e.g. `amazon.in`, `flipkart.com`, `croma.com`), analyzes review sites using Gemini to avoid scam sellers, and justifies selection. |
+| **Checkout Automation** | *(Automatic after selection)* | Spawns a visible Playwright Chrome session, navigates to the cheapest verified merchant, adds the product to the cart, proceeds to checkout, and stops securely at the payment page for the operator. |
+
+---
+
 ## 🛡️ Security & Generalist Fallback
 
 If you ask JARVIS to do a task that is not covered by the predefined commands, it will trigger the **GeneralistAgent** (Open Interpreter in restricted mode).
