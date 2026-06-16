@@ -115,15 +115,14 @@ Includes a background-threaded `RecorderAgent` capable of running video capture,
 * **Fast Path Detection**: Dynamic `find_spec` scans bypass slow subprocess checks for optional heavy dependencies (e.g. PyTorch, ChromaDB, Silero VAD) on environments where they are not installed, maintaining instant start times.
 * **API Key Pool Diagnostics**: Includes `fix_my_key.py` to recursively test connectivity, listing active generative model access scopes for each key in `config.API_KEYS_POOL`.
 
-### 👤 Dynamic Operator Persona, Presets & Self-Improvement
+### 👤 Dynamic Operator Persona & Self-Improvement (Cognitive Engine)
 * **Silent Self-Learning & Profile Tracking**: Analyzes conversational turns in the background to automatically classify the operator's style (brief, detailed, witty, formal, technical) and favorite topics (coding, shopping, system automation, etc.), persisting them silently to `memory.json`.
 * **Complexity-Based Response Length Constraints**: Dynamically assesses query complexity. General chit-chat or simple facts are constrained to exactly 3–6 lines, while complex technical/programming queries are strictly restricted to less than 12 lines (max 11 lines total, excluding empty lines) using a post-generation compression or manual truncation step.
-* **Streamlit HUD Persona Center**: Renders the active presets, detected operator style, and a frequency chart of favorite topics on the STREAMLIT dashboard.
-* **Vocal Persona Controls**:
-  - *"tell me about yourself"* -> Speeds a butler-style introduction derived from codebase file scans.
-  - *"set preset [adaptive|witty butler|minimalist|conversational|technical]"* -> Switches response styles on the fly.
-  - *"show my profile"* / *"who am i to you"* -> Speaks the operator profile summary report.
-  - codebase structural self-awareness -> Answers questions about files, skill count, and capabilities manual dynamically.
+* **Streamlit HUD Persona Center**: Renders the detected operator style and a frequency chart of favorite topics on the STREAMLIT dashboard.
+* **Vocal Persona & Identity Controls**:
+  - *"tell me about yourself"* -> Speaks a butler-style introduction derived from codebase file scans and capabilities manual.
+  - *"show my profile"* / *"who am i to you"* -> Speaks the operator style and favorite topics summary report.
+  - Codebase structural self-awareness -> Answers questions about files, skill count, and capabilities manual dynamically.
 
 ### 🛍️ Indian Store Shopper Agent & Checkout Automation
 * **Indian E-Commerce Target**: Suffixes search queries with `"price India"` and whitelists only Indian stores (`amazon.in`, `flipkart.com`, `croma.com`, `reliance-digital.in`, etc.).

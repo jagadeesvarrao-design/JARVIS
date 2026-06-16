@@ -28,6 +28,7 @@ JARVIS operates in two modes:
 | Action | Vocal Trigger / Command | Detail |
 | :--- | :--- | :--- |
 | **Wake Up** | `"jarvis"` | Plays a chime, speaks `"Yes, Sir?"`, and enters active mode. |
+| **Standby / Sleep** | `"go to sleep"`, `"sleep mode"`, `"standby"`, `"go to standby"` | Speaks `"Entering standby mode."` and enters passive standby mode, listening only for the wake word. |
 | **Exit** | `"exit"`, `"quit"` | Powers down the system and terminates execution (`os._exit(0)`). |
 
 ---
@@ -55,6 +56,10 @@ JARVIS operates in two modes:
 | Action | Vocal Trigger / Command | Detail |
 | :--- | :--- | :--- |
 | **Learn Fact** | `"remember that [fact]"`, `"save this info [fact]"`, `"remember [fact]"` | Cleans and formats the fact, saves it to `memory.json` / ChromaDB, and confirms: *"I have stored that in my long-term memory: '[fact]'"*. |
+| **Recall Memory** | `"what have you learned about me"`, `"what do you know about me"`, `"show learned memory"` | Speaks a detailed summary of all learned facts, rules, and preferences. |
+| **Forget Fact** | `"forget fact [query]"`, `"delete fact [query]"` | Purges the matched learned personal fact from `memory.json`. |
+| **Forget Rule** | `"forget rule [query]"`, `"delete rule [query]"` | Purges the matched dynamic behavior rule from `memory.json`. |
+| **Forget Preference**| `"forget preference [key]"`, `"delete preference [key]"` | Purges the matched user preference key from `memory.json`. |
 | **Open Memory** | `"open memory"`, `"show memory"` | Opens the `memory.json` database file directly in your default text editor. |
 
 ---
@@ -128,15 +133,14 @@ JARVIS interacts directly with your Desktop (`C:\Users\DELL\OneDrive\Desktop`):
 
 ---
 
-### 11. Operator Persona & Presets (Self-Learning)
+### 11. Operator Persona & Self-Learning (Cognitive Engine)
 
 JARVIS features a background self-learning engine that tracks user conversational styles and topics silently.
 
 | Action | Vocal Trigger / Command | Detail |
 | :--- | :--- | :--- |
 | **Speak Introduction** | `"tell me about yourself"`, `"who are you"`, `"speak a brief about yourself"` | Reads codebase structure, active custom skills, configuration states, and capabilities manual to formulate a custom butler-style self-introduction. |
-| **Set Preset** | `"set preset [adaptive\|witty butler\|minimalist\|conversational\|technical]"` | Automatically adjusts system prompt guidelines and constraints to the selected preset. Defaults to `adaptive` style (uses operator profile). |
-| **Show Operator Profile** | `"show my profile"`, `"who am i to you"`, `"what have you learned about me"` | JARVIS speaks a summary report detailing the active preset, detected conversational style, top topic frequency, and interaction habits. |
+| **Show Operator Profile** | `"show my profile"`, `"who am i to you"` | Speaks a summary report detailing the detected conversational style, top topic frequency, and interaction habits. |
 | **Line-Length Constraints** | *(Automatic)* | Simple queries (general facts, country profiles, basic greeting chit-chat) are constrained exactly to 3–6 lines. Complex queries (coding, debug, architecture design) are programmatically constrained to less than 12 lines (max 11 lines). |
 
 ---
@@ -149,6 +153,29 @@ JARVIS includes a shopping agent configured exclusively to find the best prices 
 | :--- | :--- | :--- |
 | **Price Comparison** | `"buy [item]"`, `"find lowest price of [item]"`, `"check price of [item]"` | Suffixes search queries with `"price India"`. Compares prices on verified Indian domains (e.g. `amazon.in`, `flipkart.com`, `croma.com`), analyzes review sites using Gemini to avoid scam sellers, and justifies selection. |
 | **Checkout Automation** | *(Automatic after selection)* | Spawns a visible Playwright Chrome session, navigates to the cheapest verified merchant, adds the product to the cart, proceeds to checkout, and stops securely at the payment page for the operator. |
+
+---
+
+### 13. Multilingual Routing & Regional Voices
+
+JARVIS supports regional accents and native speech translation dynamically.
+
+| Action | Vocal Trigger / Command | Detail |
+| :--- | :--- | :--- |
+| **Switch Language** | `"speak in [language]"`, `"talk in [language]"` | Remaps the text-to-speech output to a specific regional voice. Supported languages: Telugu, Hindi, Bengali, Tamil, Kannada, Malayalam, Marathi, Urdu, Gujarati, and English. |
+| **Auto-Detect Telugu** | *(Automatic)* | Scans text for Telugu script characters (`[\u0C00-\u0C7F]`) and automatically switches TTS to `te-IN-MohanNeural` voice model. |
+| **Bidirectional Translation** | *(Automatic)* | Translates incoming regional languages to English for execution routing, and translates responses back to the regional script before reading. |
+
+---
+
+### 14. Graphical HUD & Streamlit Dashboard
+
+JARVIS includes visual interfaces for system interaction and cognitive memory management.
+
+| Interface | Start Command / Script | Details |
+| :--- | :--- | :--- |
+| **PyQt5 HUD Dock** | `.\wakeup_jarvis.bat` (launches `jarvis_gui.py`) | Floating status bar on the screen featuring:<br>- **Voice Wave Visualizer**: Dynamic face widget displaying moods (Listening, Thinking, Speaking, Error, Standby).<br>- **Add Contact Dialogue**: Built-in modal window to register contacts.<br>- **Attachment Handler**: File-stash button to select email/WhatsApp files.<br>- **Holographic Window**: Renders downloaded search images on visual explanation queries. |
+| **Streamlit Cognitive HUD** | `.\start_dashboard.bat` (launches `dashboard.py`) | Fully featured browser panel displaying:<br>- **Cognitive Memory Lists**: Fact list, dynamic behavior rules, and preferences.<br>- **Forget / Manual Injection buttons**: Human-in-the-loop control to insert or purge rules and facts.<br>- **Operator Style Analytics**: Metrics detailing detected conversational style and favourite topic frequencies. |
 
 ---
 
