@@ -50,3 +50,80 @@ def get_introduction():
         "Systems are green and ready for your command."
     )
     return intro
+
+def get_self_awareness_context():
+    import os
+    
+    # 1. Scan Assist folder
+    assist_dir = os.path.dirname(os.path.abspath(__file__))
+    files_info = []
+    try:
+        for item in os.listdir(assist_dir):
+            item_path = os.path.join(assist_dir, item)
+            if os.path.isfile(item_path) and item.endswith(".py"):
+                sz = os.path.getsize(item_path)
+                files_info.append(f" - {item} ({sz} bytes)")
+    except Exception:
+        pass
+        
+    # 2. Scan Skills folder
+    skills_dir = os.path.join(assist_dir, "skills")
+    skills_info = []
+    try:
+        if os.path.exists(skills_dir):
+            for item in os.listdir(skills_dir):
+                if item.endswith(".py") and item != "__init__.py":
+                    skills_info.append(f" - skills/{item}")
+    except Exception:
+        pass
+        
+    # 3. Dynamic Configuration Status
+    config_status = "Unknown config."
+    try:
+        import config
+        config_status = (
+            f"Active codename: {getattr(config, 'AI_NAME', 'JARVIS')}\n"
+            f"Operator: {getattr(config, 'OWNER_NAME', 'Jagadees')}\n"
+            f"Voice rate: {getattr(config, 'VOICE_RATE', 175)}\n"
+            f"Active model list: {', '.join(getattr(config, 'AI_MODELS', []))}\n"
+            f"Ollama general model: {getattr(config, 'OLLAMA_MODEL', 'llama3')}\n"
+            f"Ollama coding model: {getattr(config, 'OLLAMA_CODING_MODEL', 'qwen2.5-coder')}\n"
+            f"Coding provider: {getattr(config, 'CODING_PROVIDER', 'ollama')}\n"
+            f"Biometric voice verification: {'Enabled' if getattr(config, 'SPEAKER_VERIFICATION_ENABLED', False) else 'Disabled'}"
+        )
+    except Exception:
+        pass
+        
+    # 4. Load manual
+    manual_content = ""
+    manual_path = os.path.join(assist_dir, "JARVIS_Complete_Manual.md")
+    if os.path.exists(manual_path):
+        try:
+            with open(manual_path, "r", encoding="utf-8") as f:
+                manual_content = f.read()
+        except Exception:
+            pass
+    else:
+        guide_path = os.path.join(assist_dir, "JARVIS_Guide.md")
+        if os.path.exists(guide_path):
+            try:
+                with open(guide_path, "r", encoding="utf-8") as f:
+                    manual_content = f.read()
+            except Exception:
+                pass
+                
+    # Construct the self-knowledge block
+    context_block = (
+        "\n=== SYSTEM SELF-AWARENESS & CAPABILITIES MATRIX ===\n"
+        f"Codename: {BOT_NAME}\n"
+        f"Version: {VERSION}\n"
+        f"Creator/Developer: {CREATOR}\n"
+        f"Operator: {USER}\n"
+        "Core Codebase Files:\n" + "\n".join(files_info) + "\n"
+        "Loaded Dynamic Skills:\n" + "\n".join(skills_info) + "\n"
+        "\nActive System Configuration:\n" + config_status + "\n\n"
+        "=== COMPLETE SYSTEM CAPABILITIES REFERENCE MANUAL ===\n"
+        f"{manual_content}\n"
+        "=====================================================\n"
+    )
+    return context_block

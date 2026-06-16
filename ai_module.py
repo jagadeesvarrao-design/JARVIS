@@ -153,13 +153,63 @@ class AIBrain:
         except Exception as e:
             return f"Local Engine Error: {e}"
 
+    def _compress_response(self, original_prompt, long_response, max_lines, current_model, system_rules):
+        """Uses the AI model to compress a response to fit within a strict line limit."""
+        compression_prompt = (
+            f"The previous response to the user's prompt was too long. It had {len([l for l in long_response.splitlines() if l.strip()])} lines.\n"
+            f"You MUST compress/rewrite this response so that it is strictly {max_lines} lines or fewer (excluding blank lines).\n"
+            f"For coding tasks, write the code in a highly compact/dense format (using single-line definitions, ternary operators, semicolons, and no empty lines within the code block).\n"
+            f"Ensure the rewritten response is complete, correct, and answers the user's request: '{original_prompt}'.\n"
+            f"Previous response to compress:\n{long_response}"
+        )
+        if self.client and current_model and system_rules:
+            try:
+                response = self.client.models.generate_content(
+                    model=current_model,
+                    contents=compression_prompt,
+                    config=types.GenerateContentConfig(system_instruction=system_rules)
+                )
+                answer = response.text if response.text else long_response
+                answer = answer.replace("*", "")
+                if "MEMORY:" in answer: answer = answer.split("MEMORY:")[0]
+                answer = re.sub(r'\[(?!(?i:IMAGE|SIMPLE_IMAGE_REQUEST|Image of)).*?\]', '', answer).strip()
+                return answer
+            except Exception as e:
+                print(f"⚠️ Compression error via Gemini: {e}")
+        
+        # Fallback manual compression: try to clean up lines, or truncate
+        lines = long_response.splitlines()
+        non_empty = [l for l in lines if l.strip()]
+        if len(non_empty) > max_lines:
+            return "\n".join(non_empty[:max_lines])
+        return long_response
+
+    def _enforce_line_limits(self, user_text, answer, current_model=None, system_rules=None):
+        is_complex = False
+        if "```" in answer or any(kw in user_text.lower() for kw in ["code", "python", "function", "program", "script", "regex", "develop", "system design"]):
+            is_complex = True
+
+        non_empty_lines = [l for l in answer.splitlines() if l.strip()]
+        line_count = len(non_empty_lines)
+
+        if is_complex:
+            if line_count >= 12:
+                print(f"⚠️ Complex response is too long ({line_count} lines). Compressing...")
+                answer = self._compress_response(user_text, answer, 11, current_model, system_rules)
+        else:
+            if line_count > 6:
+                print(f"⚠️ Simple response is too long ({line_count} lines). Compressing...")
+                answer = self._compress_response(user_text, answer, 6, current_model, system_rules)
+        return answer
+
     # =================================================================
     # PRIMARY ROUTING LOGIC
     # =================================================================
     def get_response(self, user_text, image_path=None, context=None):
         if not self.client or not self.api_keys: 
             # If completely failed to connect to Gemini at boot, force local
-            return self._get_ollama_fallback(user_text, context)
+            raw_answer = self._get_ollama_fallback(user_text, context)
+            return self._enforce_line_limits(user_text, raw_answer)
 
         if self.request_count >= self.RPM_THRESHOLD:
             print(f"🔄 Key #{self.current_key_index + 1} reached 18 RPM safety limit. Rotating...")
@@ -172,23 +222,69 @@ class AIBrain:
             current_model = self.models[self.current_model_index]
             
             try:
-                # 1. Retrieve Memory
+                # 1. Retrieve Memory & Self-Awareness
                 if attempt == 0:
                     try:
                         from memory_moduler import MemorySystem 
                         mem = MemorySystem()
-                        user_facts = mem.recall() or "No facts."
-                    except: user_facts = "Unavailable"
+                        user_facts = mem.recall_facts() or "No facts."
+                        custom_rules = mem.recall_rules()
+                        user_prefs = mem.recall_preferences()
+                        user_profile = mem.get_user_profile()
+                    except:
+                        user_facts = "Unavailable"
+                        custom_rules = []
+                        user_prefs = {}
+                        user_profile = {}
+                        
+                    try:
+                        self_awareness = identity.get_self_awareness_context()
+                    except:
+                        self_awareness = ""
                 
-                # 2. System Rules
+                # 2. Answering length and complexity rules
+                style = user_profile.get("conversational_style", "conversational")
+                interaction = user_profile.get("interaction_type", "text")
+                frequent_topics = user_profile.get("frequent_topics", {})
+                top_topics = sorted(frequent_topics.items(), key=lambda x: x[1], reverse=True)
+                fav_topic = top_topics[0][0] if top_topics else "general_info"
+
+                complexity_rules = (
+                    f"COMPLEXITY & ANSWER LENGTH RULES:\n"
+                    f"   - You MUST dynamically assess the complexity of the Operator's request.\n"
+                    f"   - For simple topics (e.g. general knowledge facts, country details, basic definitions, greeting chit-chat, simple conversions), write a response that spans exactly 3 to 6 lines of text (separate key ideas or sentences onto newlines). Do NOT output a single long line or exceed 6 lines.\n"
+                    f"   - For complex topics (e.g. coding, programming logic, code debugging, complex system design, research requests), your entire response (including all code blocks, markdown tags, and explanations) MUST be strictly less than 12 lines of text (maximum 11 lines total, excluding empty lines). For programming queries, make code blocks extremely compact (e.g., use single-line solutions, ternary operators, avoid empty lines inside code blocks) and limit explanations to at most 1-2 short sentences. NEVER exceed 11 lines of text total.\n"
+                    f"   - Always keep answers brief, clear, and direct. Focus purely on helping the Operator understand the topic clearly and quickly, with absolutely no fluff or filler.\n"
+                    f"   - Dynamically adapt to the Operator's style: '{style}' (e.g., if 'technical', favor code blocks; if 'witty', add dry humor; if 'brief', favor concise answers).\n"
+                    f"   - Tailor explanations considering the Operator's interest in the topic '{fav_topic}'.\n"
+                )
+
+                # 3. System Rules
                 system_rules = (
                     f"You are {identity.BOT_NAME}, created by {config.OWNER_NAME}.\n"
                     f"Personality: {identity.PERSONALITY}\n"
+                    f"{complexity_rules}\n"
                     f"CRITICAL RULES:\n"
                     f"   - If the user asks for an image, you MUST end your response with this EXACT tag: [IMAGE: <search_query>]\n"
                     f"   - If the user asks about a person who is not a well-known historical or public figure, and there is no information about them in the MEMORY block, do not hallucinate or make up details. Instead, politely state that you do not have information about them, or ask the user to tell you more about them so you can remember.\n"
-                    f"SILENCE: Do NOT read the memory block.\n"
-                    f"MEMORY: [{user_facts}]"
+                )
+                
+                if self_awareness:
+                    system_rules += f"\n{self_awareness}\n"
+                    
+                if custom_rules:
+                    system_rules += "\nDYNAMIC RULES LEARNED FROM CONVERSATIONS (YOU MUST OBEY THESE):\n"
+                    for rule in custom_rules:
+                        system_rules += f"   - {rule}\n"
+                        
+                if user_prefs:
+                    system_rules += "\nUSER PREFERENCES LEARNED (YOU MUST ADAPT TO THESE):\n"
+                    for k, v in user_prefs.items():
+                        system_rules += f"   - Preferred {k}: {v}\n"
+                        
+                system_rules += (
+                    f"\nSILENCE: Do NOT read the memory block.\n"
+                    f"MEMORY OF FACTS: [{user_facts}]"
                 )
                 
                 # 3. Request Execution
@@ -215,6 +311,9 @@ class AIBrain:
                 answer = answer.replace("*", "")
                 if "MEMORY:" in answer: answer = answer.split("MEMORY:")[0]
                 answer = re.sub(r'\[(?!(?i:IMAGE|SIMPLE_IMAGE_REQUEST|Image of)).*?\]', '', answer).strip()
+
+                # 5. Enforce line limits
+                answer = self._enforce_line_limits(user_text, answer, current_model, system_rules)
 
                 self.chat_history.append(f"User: {user_text}")
                 self.chat_history.append(f"Jarvis: {answer}")
@@ -266,4 +365,5 @@ class AIBrain:
                 continue
 
         # If all keys and retries exhaust, trigger Ollama as the absolute last resort
-        return self._get_ollama_fallback(user_text, context)
+        raw_answer = self._get_ollama_fallback(user_text, context)
+        return self._enforce_line_limits(user_text, raw_answer)

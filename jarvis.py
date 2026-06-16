@@ -998,6 +998,96 @@ Return ONLY a valid JSON object matching this schema:
                 self._respond("Memory file not created yet.")
             return False
 
+        if any(w in text for w in ["tell me about yourself", "introduce yourself", "who are you", "what is jarvis", "who is jarvis", "tell me about you"]):
+            self._respond("Initializing self-introduction sequence...")
+            prompt = (
+                "Introduce yourself to a guest. Synthesize an impressive, professional butler-style vocal greeting. "
+                "Briefly mention your version, creator, key system components (like your neural engine and modules), "
+                "and some advanced dynamic capabilities from your capabilities reference manual. "
+                "CRITICAL SPEECH RULES:\n"
+                "1. Keep it concise, natural, and conversational.\n"
+                "2. Do NOT use markdown symbols (no asterisks, backticks, hashes, underlines, or square brackets).\n"
+                "3. Do NOT output bullet points or list dashes (use words like 'first', 'second', 'additionally' instead of lists).\n"
+                "4. Conclude with a loyal butler remark, such as 'I am online and ready to assist, Sir.'"
+            )
+            try:
+                intro_response = self.brain.get_response(prompt)
+                # Cleanup formatting symbols to make text perfectly readable by TTS
+                clean_response = intro_response.replace("*", "").replace("`", "")
+                clean_response = re.sub(r'#+\s+', '', clean_response)
+                clean_response = re.sub(r'^\s*[-*+]\s+', '', clean_response, flags=re.MULTILINE)
+                clean_response = re.sub(r'^\s*\d+\.\s+', '', clean_response, flags=re.MULTILINE)
+                clean_response = re.sub(r'\s+', ' ', clean_response).strip()
+                self._respond(clean_response)
+            except Exception as e:
+                print(f"Error generating introduction: {e}")
+                self._respond("I am JARVIS, Sir. A virtual artificial intelligence designed by Jagdees. I operate on python architecture with a Gemini neural engine, and I am online and ready to assist.")
+            return False
+
+        if any(w in text for w in ["show my profile", "who am i to you", "what is my style", "show operator profile"]):
+            from memory_moduler import MemorySystem
+            mem = MemorySystem()
+            profile = mem.get_user_profile()
+            style = profile.get("conversational_style", "conversational")
+            interaction = profile.get("interaction_type", "text")
+            frequent_topics = profile.get("frequent_topics", {})
+            
+            top_topics = sorted(frequent_topics.items(), key=lambda x: x[1], reverse=True)
+            fav_topic = top_topics[0][0].replace("_", " ") if top_topics else "casual chat"
+            
+            report = (
+                f"Sir, I have dynamically analyzed your usage patterns. "
+                f"Your detected conversational style is currently classified as {style}. "
+                f"Your primary topic of interest is {fav_topic}, and you typically interact with me using {interaction} input. "
+                f"I am actively using these parameters to adjust and optimize your experience."
+            )
+            self._respond(report)
+            return False
+
+        if any(w in text for w in ["what have you learned", "what do you know about me", "show learned memory"]):
+            from memory_moduler import MemorySystem
+            mem = MemorySystem()
+            facts = mem.recall_facts()
+            rules = mem.recall_rules()
+            prefs = mem.recall_preferences()
+            
+            summary = []
+            if facts:
+                summary.append(f"Facts I remember: {facts}.")
+            if rules:
+                rules_str = ", ".join(rules)
+                summary.append(f"Behavioral rules: {rules_str}.")
+            if prefs:
+                prefs_str = ", ".join([f"{k} is {v}" for k, v in prefs.items()])
+                summary.append(f"Preferences: {prefs_str}.")
+                
+            if summary:
+                self._respond("Sir, here is what I have learned from our conversations: " + " ".join(summary))
+            else:
+                self._respond("I haven't learned any facts, rules, or preferences yet, Sir.")
+            return False
+
+        if text.startswith("forget rule") or "delete rule" in text:
+            rule_query = text.replace("forget rule", "").replace("delete rule", "").strip()
+            from memory_moduler import MemorySystem
+            res = MemorySystem().forget_rule(rule_query)
+            self._respond(res)
+            return False
+
+        if text.startswith("forget fact") or "delete fact" in text:
+            fact_query = text.replace("forget fact", "").replace("delete fact", "").strip()
+            from memory_moduler import MemorySystem
+            res = MemorySystem().forget_fact(fact_query)
+            self._respond(res)
+            return False
+
+        if text.startswith("forget preference") or "delete preference" in text:
+            pref_query = text.replace("forget preference", "").replace("delete preference", "").strip()
+            from memory_moduler import MemorySystem
+            res = MemorySystem().forget_preference(pref_query)
+            self._respond(res)
+            return False
+
         # ==========================================
         # 🌐 LEVEL 1: WEB SEARCH (NEW!)
         # ==========================================
@@ -1848,6 +1938,13 @@ Return ONLY a valid JSON object matching this schema:
 
         self._respond(response)
         
+        # Trigger Self-Learning asynchronously from this conversation turn
+        try:
+            from memory_moduler import MemorySystem
+            MemorySystem().analyze_and_learn_from_chat(original_text, response)
+        except Exception as sle:
+            print(f"⚠️ Self-learning trigger failed: {sle}")
+            
         return True # STAY AWAKE (Main loop will auto-sleep if user is silent)
 
     def run(self):

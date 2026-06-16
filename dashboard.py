@@ -141,30 +141,153 @@ if os.path.exists(log_file):
     except Exception:
         logs = []
 
-# --- 1. LEFT COLUMN: LIVE FEED ---
+# --- 1. LEFT COLUMN: TABS (LIVE FEED & COGNITIVE MEMORY) ---
 with main_col:
-    st.subheader("📡 DATA UPLINK")
-    chat_container = st.container(height=500)
+    tab1, tab2 = st.tabs(["📡 DATA UPLINK", "🧠 COGNITIVE BRAIN & MEMORY"])
     
-    with chat_container:
-        if not logs:
-            st.info("AWAITING INPUT...")
+    with tab1:
+        st.subheader("CONSOLE INTERACTION FEED")
+        chat_container = st.container(height=500)
         
-        for log in logs[:20]: # Show last 20 to keep it fast
-            timestamp = log.get("timestamp", "Unknown")
-            msg_type = log.get("type", "system")
-            message = log.get("message", str(log))
+        with chat_container:
+            if not logs:
+                st.info("AWAITING INPUT...")
             
-            if msg_type == "user":
-                with st.chat_message("user", avatar="👤"):
-                    st.markdown(f"**[{timestamp}] USER:** {message}")
-            elif msg_type == "jarvis":
-                with st.chat_message("assistant", avatar="🤖"):
-                    st.markdown(f"**[{timestamp}] AI:** {message}")
-            elif msg_type == "task":
-                st.warning(f"⚡ ACTION [{timestamp}]: {message}")
+            for log in logs[:20]: # Show last 20 to keep it fast
+                timestamp = log.get("timestamp", "Unknown")
+                msg_type = log.get("type", "system")
+                message = log.get("message", str(log))
+                
+                if msg_type == "user":
+                    with st.chat_message("user", avatar="👤"):
+                        st.markdown(f"**[{timestamp}] USER:** {message}")
+                elif msg_type == "jarvis":
+                    with st.chat_message("assistant", avatar="🤖"):
+                        st.markdown(f"**[{timestamp}] AI:** {message}")
+                elif msg_type == "task":
+                    st.warning(f"⚡ ACTION [{timestamp}]: {message}")
+                else:
+                    st.code(f"LOG: {message}")
+
+    with tab2:
+        st.subheader("COGNITIVE MEMORY HUD")
+        
+        try:
+            from memory_moduler import MemorySystem
+            mem = MemorySystem()
+        except Exception as e:
+            st.error(f"Failed to load memory module: {e}")
+            mem = None
+
+        if mem:
+            # 👤 Operator Profile Section
+            st.write("### 👤 Operator Cognitive Persona")
+            profile = mem.get_user_profile()
+            
+            p_style = profile.get("conversational_style", "conversational")
+            p_interaction = profile.get("interaction_type", "text")
+            p_topics = profile.get("frequent_topics", {})
+            
+            c1, c2, c3 = st.columns(3)
+            with c1:
+                st.metric("Detected Style", p_style.upper())
+            with c2:
+                st.metric("Preferred Input", p_interaction.upper())
+            with c3:
+                top_topics = sorted(p_topics.items(), key=lambda x: x[1], reverse=True)
+                fav_topic = top_topics[0][0].replace("_", " ").upper() if top_topics else "NONE"
+                st.metric("Primary Topic", fav_topic)
+                
+            if p_topics:
+                st.write("**Topic Interaction Frequency:**")
+                cols = st.columns(len(p_topics))
+                for idx, (t, count) in enumerate(p_topics.items()):
+                    cols[idx].code(f"{t.replace('_', ' ')}: {count}")
+            
+            st.markdown("---")
+            
+            # 1. Facts Section
+            st.write("### 📝 Stored Facts about Operator")
+            facts = mem.data.get("facts", [])
+            if facts:
+                for i, fact in enumerate(facts):
+                    c1, c2 = st.columns([5, 1])
+                    c1.info(fact)
+                    if c2.button("Forget", key=f"forget_fact_{i}"):
+                        res = mem.forget_fact(i + 1)
+                        st.success(res)
+                        time.sleep(0.5)
+                        st.rerun()
             else:
-                st.code(f"LOG: {message}")
+                st.info("No personal facts stored yet.")
+                
+            # 2. Rules Section
+            st.write("### 📜 Dynamic Directives & Behavioral Rules")
+            rules = mem.recall_rules()
+            if rules:
+                for i, rule in enumerate(rules):
+                    c1, c2 = st.columns([5, 1])
+                    c1.warning(rule)
+                    if c2.button("Purge", key=f"forget_rule_{i}"):
+                        res = mem.forget_rule(i + 1)
+                        st.success(res)
+                        time.sleep(0.5)
+                        st.rerun()
+            else:
+                st.info("No behavioral rules learned yet.")
+                
+            # 3. Preferences Section
+            st.write("### ⚙️ Operator Preferences")
+            prefs = mem.recall_preferences()
+            if prefs:
+                for k, v in list(prefs.items()):
+                    c1, c2 = st.columns([5, 1])
+                    c1.code(f"{k} = {v}")
+                    if c2.button("Clear", key=f"forget_pref_{k}"):
+                        res = mem.forget_preference(k)
+                        st.success(res)
+                        time.sleep(0.5)
+                        st.rerun()
+            else:
+                st.info("No preferences saved yet.")
+
+            # 4. Manual Cognitive Injection
+            st.markdown("---")
+            st.write("### ➕ Manual Cognitive Injection")
+            with st.form("manual_memory_form", clear_on_submit=True):
+                mem_type = st.selectbox("Memory Type", ["Fact", "Behavioral Rule", "Preference"])
+                
+                # Render inputs conditionally
+                pref_key = st.text_input("Preference Key (e.g. favorite_color, speak_language) - Preference Type Only")
+                pref_val = st.text_input("Preference Value - Preference Type Only")
+                mem_content = st.text_area("Memory Content / Behavioral Directive - Fact & Rule Types Only")
+                
+                submit_btn = st.form_submit_button("INJECT INTO BRAIN")
+                if submit_btn:
+                    if mem_type == "Fact":
+                        if mem_content.strip():
+                            res = mem.remember_fact("remember that " + mem_content.strip())
+                            st.success(res)
+                            time.sleep(0.5)
+                            st.rerun()
+                        else:
+                            st.error("Please provide fact content.")
+                    elif mem_type == "Behavioral Rule":
+                        if mem_content.strip():
+                            res = mem.remember_rule(mem_content.strip())
+                            st.success(res)
+                            time.sleep(0.5)
+                            st.rerun()
+                        else:
+                            st.error("Please provide rule content.")
+                    elif mem_type == "Preference":
+                        if pref_key.strip() and pref_val.strip():
+                            res = mem.set_preference(pref_key.strip(), pref_val.strip())
+                            st.success(res)
+                            time.sleep(0.5)
+                            st.rerun()
+                        else:
+                            st.error("Please provide both key and value for preference.")
 
 # --- 2. RIGHT COLUMN: HARDWARE TELEMETRY ---
 with stat_col:
