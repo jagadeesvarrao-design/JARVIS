@@ -53,7 +53,7 @@ OLLAMA_MODEL = "llama3:latest"
 OLLAMA_CODING_MODEL = "qwen2.5-coder:7b"
 
 # Default local endpoint for Ollama
-OLLAMA_URL = "http://localhost:11434/api/generate"
+OLLAMA_URL = "http://127.0.0.1:11434/api/generate"
 
 # ==================== CODING AGENT CONFIGURATION ====================
 # Provider options: "gemini" or "ollama" (local)

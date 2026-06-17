@@ -76,7 +76,7 @@ class AIBrain:
                     return "Sir, no local models are installed in Ollama. Please run 'ollama pull llama3' in your terminal."
             else:
                 return "My local neural engine (Ollama) is offline or not responding, Sir."
-        except requests.exceptions.ConnectionError:
+        except requests.RequestException:
             print("🚀 Local Ollama server is offline. Attempting to start it...")
             import subprocess
             try:
@@ -99,7 +99,7 @@ class AIBrain:
                         if tags_resp.status_code == 200:
                             server_started = True
                             break
-                    except requests.exceptions.ConnectionError:
+                    except Exception:
                         pass
                     time.sleep(1.0)
                 

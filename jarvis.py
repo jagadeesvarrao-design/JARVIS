@@ -1,6 +1,20 @@
 import sys
 import os
 os.environ["CUDA_VISIBLE_DEVICES"] = ""
+
+# Try to resolve DLL directory for torch if on Windows to prevent loading conflicts
+try:
+    if os.name == 'nt':
+        import importlib.util
+        spec = importlib.util.find_spec("torch")
+        if spec is not None and spec.submodule_search_locations:
+            venv_torch_lib = os.path.join(spec.submodule_search_locations[0], "lib")
+            if os.path.exists(venv_torch_lib):
+                os.add_dll_directory(venv_torch_lib)
+    import torch
+except Exception:
+    pass
+
 try:
     sys.stdout.reconfigure(encoding='utf-8')
     sys.stderr.reconfigure(encoding='utf-8')
@@ -109,10 +123,12 @@ def voice_worker():
                             communicate = edge_tts.Communicate(text, voice)
                             await communicate.save(temp_file)
                         
-                        loop.run_until_complete(asyncio.wait_for(run_tts(), timeout=4.0))
+                        loop.run_until_complete(asyncio.wait_for(run_tts(), timeout=10.0))
                         success = True
                     except Exception as e:
+                        import traceback
                         print(f"⚠️ Edge TTS failed: {e}. Falling back to pyttsx3.")
+                        traceback.print_exc()
                         success = False
                         # Network or resolution errors disable Edge TTS for this session
                         err_str = str(e).lower()
@@ -284,6 +300,9 @@ class JARVIS:
         # Start background thread to warm up ChromaDB/PyTorch Memory Core
         threading.Thread(target=self._warm_up_memory, daemon=True, name="MemoryWarmupThread").start()
         
+        # Start background thread to ensure Ollama is running and connected
+        threading.Thread(target=self._ensure_ollama_running_bg, daemon=True, name="OllamaDaemonThread").start()
+        
         # Dynamic Skills System initialization
         self.skills = []
         self.load_skills()
@@ -326,13 +345,60 @@ class JARVIS:
             _ = self.memory_brain
         except Exception as e:
             print(f"⚠️ [SYSTEM] Background Memory Core warmup failed: {e}")
+
+    def _ensure_ollama_running_bg(self):
+        import requests
+        url_tags = config.OLLAMA_URL.replace("/api/generate", "/api/tags")
+        print("🧠 [SYSTEM]: Checking Ollama status in background...")
+        try:
+            resp = requests.get(url_tags, timeout=3.0)
+            if resp.status_code == 200:
+                print("🧠 [SYSTEM]: Ollama is online and connected.")
+                return
+        except Exception:
+            pass
+
+        print("🚀 [SYSTEM]: Local Ollama server is offline. Starting in background...")
+        import subprocess
+        try:
+            ollama_bin = "ollama"
+            default_path = os.path.join(os.environ.get("LOCALAPPDATA", ""), r"Programs\Ollama\ollama.exe")
+            if os.path.exists(default_path):
+                ollama_bin = default_path
+            subprocess.Popen(
+                [ollama_bin, "serve"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
+            )
+            
+            # Poll port for up to 10 seconds
+            for _ in range(10):
+                try:
+                    resp = requests.get(url_tags, timeout=1.0)
+                    if resp.status_code == 200:
+                        print("🚀 [SYSTEM]: Local Ollama server started successfully and connected.")
+                        return
+                except Exception:
+                    pass
+                time.sleep(1.0)
+            print("⚠️ [SYSTEM]: Ollama server did not respond within 10 seconds.")
+        except Exception as e:
+            print(f"❌ [SYSTEM]: Failed to launch Ollama: {e}")
     def _respond(self, text, voice=None):
         if text:
             # Determine voice to use
-            voice_to_use = voice if voice else getattr(self, "active_voice", None)
+            voice_to_use = voice
+            if not voice_to_use:
+                voice_to_use = getattr(self, "temp_voice_override", None)
+            if not voice_to_use:
+                voice_to_use = getattr(self, "active_voice", None)
             
             # If we are using Telugu but response is in English, translate to Telugu script
-            if (voice_to_use == "te-IN-MohanNeural" or getattr(self, "active_voice", None) == "te-IN-MohanNeural") and not re.search(r'[\u0C00-\u0C7F]', text):
+            is_telugu = (voice_to_use == "te-IN-MohanNeural" or 
+                         getattr(self, "temp_voice_override", None) == "te-IN-MohanNeural" or 
+                         getattr(self, "active_voice", None) == "te-IN-MohanNeural")
+            if is_telugu and not re.search(r'[\u0C00-\u0C7F]', text):
                 print(f"🤖 JARVIS (English response): {text}")
                 text = self.translate_to_telugu(text)
                 voice_to_use = "te-IN-MohanNeural"
@@ -854,6 +920,13 @@ Return ONLY a valid JSON object matching this schema:
             return {"intent": "conversational", "topic": text}
 
     def process_command(self, text):
+        self.temp_voice_override = None
+        try:
+            return self._process_command_impl(text)
+        finally:
+            self.temp_voice_override = None
+
+    def _process_command_impl(self, text):
         original_text = text
         text = text.lower()
         print(f"👤 USER: {text}")
@@ -865,7 +938,7 @@ Return ONLY a valid JSON object matching this schema:
 
         # Check if the user's input contains Telugu script characters
         if re.search(r'[\u0C00-\u0C7F]', original_text):
-            self.active_voice = "te-IN-MohanNeural"
+            self.temp_voice_override = "te-IN-MohanNeural"
             print("🎙️ Telugu command detected. Translating...")
             translated_text = self.translate_to_english(original_text)
             print(f"🎙️ Translated Telugu command to English: '{translated_text}'")

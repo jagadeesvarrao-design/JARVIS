@@ -27,7 +27,9 @@ class RotatingModel:
         import config
         # Check if the project agent wants to route coding tasks through local Ollama
         coding_provider = getattr(config, 'CODING_PROVIDER', 'gemini').lower()
-        if coding_provider == 'ollama':
+        contents_str = str(contents).lower()
+        is_website_build = any(kw in contents_str for kw in ["website", "web site", "flask", "html", "run.py"])
+        if coding_provider == 'ollama' or is_website_build:
             model_to_use = getattr(config, 'OLLAMA_CODING_MODEL', 'qwen2.5-coder:7b')
             print(f"🚀 agent_module: Routing coding task directly to local Ollama model '{model_to_use}'...")
             return self._call_local_ollama(contents, model_to_use)
@@ -91,7 +93,7 @@ class RotatingModel:
                     return MockResponse("Sir, no local models are installed in Ollama. Please run 'ollama pull llama3' in your terminal.")
             else:
                 return MockResponse("My local neural engine (Ollama) is offline or not responding, Sir.")
-        except requests.exceptions.ConnectionError:
+        except requests.RequestException:
             print("🚀 agent_module: Local Ollama server is offline. Attempting to start it...")
             import subprocess
             try:
@@ -114,7 +116,7 @@ class RotatingModel:
                         if tags_resp.status_code == 200:
                             server_started = True
                             break
-                    except requests.exceptions.ConnectionError:
+                    except Exception:
                         pass
                     time.sleep(1.0)
                 

@@ -190,6 +190,27 @@ class SpeechRecognizer:
                 
                 print(f"👂 [Speech recognition] en: '{en_text}' | te: '{te_text}'")
                 
+                # Define core English grammatical words to identify English speech
+                ENGLISH_CORE_WORDS = {
+                    "the", "a", "an", "and", "or", "but", "if", "then", "of", "to", "in", "on", "at", 
+                    "by", "for", "with", "about", "from", "into", "through", "during", "before", "after",
+                    "i", "me", "my", "myself", "we", "us", "our", "ours", "you", "your", "yours", 
+                    "he", "him", "his", "she", "her", "hers", "it", "its", "they", "them", "their", "theirs",
+                    "is", "am", "are", "was", "were", "be", "been", "being", "have", "has", "had", 
+                    "do", "does", "did", "done", "will", "would", "shall", "should", "can", "could", "may", "might", "must",
+                    "what", "which", "who", "whom", "whose", "this", "that", "these", "those",
+                    "there", "here", "when", "where", "why", "how", "all", "any", "both", "each", "few", 
+                    "more", "most", "other", "some", "such", "no", "nor", "not", "only", "own", "same", 
+                    "so", "than", "too", "very", "just", "hello", "jarvis", "please", "speak", "english"
+                }
+                
+                en_words = set(en_text.lower().split()) if en_text else set()
+                is_english_command = bool(en_words & ENGLISH_CORE_WORDS)
+                
+                # If we detected English core words, assume it is English speech
+                if en_text and is_english_command:
+                    return en_text.lower()
+                
                 # Check if Telugu transcription contains Telugu characters
                 if te_text and re.search(r'[\u0C00-\u0C7F]', te_text):
                     return te_text
