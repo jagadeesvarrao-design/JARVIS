@@ -47,6 +47,48 @@ class AIBrain:
         self._connect_client()
 
     # =================================================================
+    # NEW: CHATGPT FALLBACK ENGINE
+    # =================================================================
+    def _get_chatgpt_fallback(self, user_text, context, system_rules):
+        import requests
+        api_key = getattr(config, "OPENAI_API_KEY", None)
+        model = getattr(config, "GPT_MODEL", "gpt-4o-mini")
+        
+        if not api_key:
+            print("⚠️ [AIBRAIN]: No OpenAI API Key found. Skipping ChatGPT fallback.")
+            return None
+            
+        print(f"🚀 [AIBRAIN]: Attempting ChatGPT fallback using model '{model}'...")
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {api_key}"
+        }
+        
+        messages = [
+            {"role": "system", "content": system_rules},
+            {"role": "user", "content": f"Context: {context}\nUSER: {user_text}"}
+        ]
+        
+        payload = {
+            "model": model,
+            "messages": messages,
+            "max_tokens": 150
+        }
+        
+        try:
+            response = requests.post("https://api.openai.com/v1/chat/completions", json=payload, headers=headers, timeout=15.0)
+            if response.status_code == 200:
+                answer = response.json()["choices"][0]["message"]["content"].strip()
+                print("✅ [AIBRAIN]: ChatGPT response retrieved successfully.")
+                return answer
+            else:
+                print(f"⚠️ [AIBRAIN]: ChatGPT API returned code {response.status_code}: {response.text}")
+                return None
+        except Exception as e:
+            print(f"⚠️ [AIBRAIN]: ChatGPT fallback connection failed: {e}")
+            return None
+
+    # =================================================================
     # NEW: OLLAMA FALLBACK ENGINE
     # =================================================================
     def _get_ollama_fallback(self, user_text, context):
@@ -204,6 +246,8 @@ class AIBrain:
     # PRIMARY ROUTING LOGIC
     # =================================================================
     def get_response(self, user_text, image_path=None, context=None):
+        system_rules = f"You are {identity.BOT_NAME}, created by {config.OWNER_NAME}.\nPersonality: {identity.PERSONALITY}"
+        
         use_ollama = False
         if hasattr(config, "CONVERSATION_PROVIDER") and config.CONVERSATION_PROVIDER == "ollama":
             use_ollama = True
@@ -213,7 +257,11 @@ class AIBrain:
             self._connect_client()
             
         if use_ollama or not self.client or not self.api_keys: 
-            # If completely failed to connect to Gemini at boot, force local
+            # If completely failed to connect to Gemini at boot, try ChatGPT first before Ollama
+            if not use_ollama:
+                gpt_ans = self._get_chatgpt_fallback(user_text, context, system_rules)
+                if gpt_ans:
+                    return self._enforce_line_limits(user_text, gpt_ans)
             raw_answer = self._get_ollama_fallback(user_text, context)
             return self._enforce_line_limits(user_text, raw_answer)
 
@@ -374,6 +422,10 @@ class AIBrain:
                 attempt += 1
                 continue
 
-        # If all keys and retries exhaust, trigger Ollama as the absolute last resort
+        # If all keys and retries exhaust, trigger ChatGPT fallback first, and then Ollama
+        gpt_ans = self._get_chatgpt_fallback(user_text, context, system_rules)
+        if gpt_ans:
+            return self._enforce_line_limits(user_text, gpt_ans)
+
         raw_answer = self._get_ollama_fallback(user_text, context)
         return self._enforce_line_limits(user_text, raw_answer)

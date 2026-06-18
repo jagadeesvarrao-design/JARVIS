@@ -127,3 +127,75 @@ def get_self_awareness_context():
         "=====================================================\n"
     )
     return context_block
+
+def handle_self_query(text):
+    text = text.lower().strip()
+    
+    # 1. Modules queries
+    if any(w in text for w in ["modules", "codebase", "code files", "py files", "your files", "what files you have", "what modules do you have", "your modules", "list modules"]):
+        return (
+            "Sir, my architecture is divided into ten core Python modules and three dynamic skills:\n"
+            "- jarvis.py: Main Orchestrator and entry point.\n"
+            "- ai_module.py: AI Brain router and Ollama client.\n"
+            "- vision_module.py: Native GDI screen capture and Pillow vision engine.\n"
+            "- automation_module.py: Win32 API window controller and keystroke automator.\n"
+            "- speech_module.py: Voice Recognition (English/Telugu) and offline/online TTS.\n"
+            "- contact_module.py: Contact manager and fuzzy matcher.\n"
+            "- memory_moduler.py: JSON facts and preferences database.\n"
+            "- agent_module.py: Chromadb memory agent and document generator.\n"
+            "- proactive_module.py: Background system health and screen traceback monitor.\n"
+            "- logger_module.py: Session activity and history logger.\n"
+            "Additionally, my loaded dynamic skills are: file_management, orchestration_skill, and shopper_agent."
+        )
+        
+    # 2. AI Brain / Model queries
+    if any(w in text for w in ["ai brain", "model", "neural engine", "gemini", "ollama", "brain", "what ai are you using", "what brain"]):
+        try:
+            import config
+            primary_cloud = "Gemini 2.5 Flash Lite"
+            local_model = getattr(config, "OLLAMA_MODEL", "llama3:latest")
+            coding_model = getattr(config, "OLLAMA_CODING_MODEL", "qwen2.5-coder:7b")
+            conv_provider = getattr(config, "CONVERSATION_PROVIDER", "ollama")
+        except Exception:
+            primary_cloud = "Gemini 2.5 Flash Lite"
+            local_model = "llama3:latest"
+            coding_model = "qwen2.5-coder:7b"
+            conv_provider = "ollama"
+        
+        return (
+            f"Sir, I run on a dual-brain hybrid configuration:\n"
+            f"- My cloud brain uses Google's {primary_cloud} as the primary model, with Flash and Pro fallbacks.\n"
+            f"- My local neural engine uses Ollama with '{local_model}' for general conversation and '{coding_model}' for coding tasks.\n"
+            f"Currently, my default conversation provider is set to '{conv_provider}'."
+        )
+
+    # 3. Capabilities queries
+    if any(w in text for w in ["what can you do", "what are your capabilities", "how many things can you do", "capabilities", "your features", "things you can do", "what can you help", "what do you do"]):
+        return (
+            "Sir, I am equipped with a wide range of capabilities, grouped into five primary divisions:\n"
+            "1. Automation: Launching/closing apps, executing system shortcuts, writing text, and media control.\n"
+            "2. Vision: Real-time screen change tracking, stuck error/traceback detection, and capture.\n"
+            "3. Communication: Sending emails via SMTP and Whatsapp automation.\n"
+            "4. Projects & Code: Building functional websites and running local server code via Project Agent.\n"
+            "5. Cognitive: Long-term fact recall, custom behavior rules, and multi-agent plan orchestration.\n"
+            "Is there a specific system division you would like to run, Sir?"
+        )
+        
+    # 4. Identity / Creator queries
+    if any(w in text for w in ["who are you", "who designed you", "who build you", "who created you", "who is your creator", "tell me about yourself", "your name", "what is your name"]):
+        return (
+            f"I am {BOT_NAME}, Sir. An advanced virtual artificial intelligence created by {CREATOR} for you, {USER}.\n"
+            f"I am currently running on version {VERSION} with systems fully operational and ready for your command."
+        )
+
+    # 5. Architecture / Tech Stack queries
+    if any(w in text for w in ["architecture", "tech stack", "how are you built", "how do you work", "system architecture"]):
+        return (
+            "Sir, my core system architecture is built on a Python 3.12 foundation. "
+            "I utilize PyQt5 for holographic projections, Streamlit for HUD logs, "
+            "native Windows GDI and ctypes for lightning-fast GUI automation, and "
+            "Chromadb with Ollama's REST API for long-term memory embeddings. "
+            "This makes me completely independent of heavy frameworks like PyTorch or SentenceTransformers."
+        )
+        
+    return None

@@ -1988,6 +1988,12 @@ Return ONLY a valid JSON object matching this schema:
         active_window = self.automation.get_active_window_title() if hasattr(self.automation, 'get_active_window_title') else ""
         context = f"{self.last_topic}. User is looking at: {active_window}" if active_window else self.last_topic
 
+        # Intercept queries about JARVIS itself to answer without invoking the AI brain
+        self_response = identity.handle_self_query(text)
+        if self_response:
+            self._respond(self_response)
+            return True
+
         # 1. Get raw response (Force Anti-Code)
         force_tag = " IMPORTANT: Use the tag [IMAGE: <topic>] for visual explanations. Do NOT write code."
         response = self.brain.get_response(query_text + force_tag, context=context)

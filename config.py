@@ -4,6 +4,8 @@ from dotenv import load_dotenv
 load_dotenv()
 
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+GPT_MODEL = os.getenv("AI_MODEL", "gpt-4o-mini")
 # ==================== KEYS ====================
 API_KEYS_POOL = []
 _env_key = os.getenv("GEMINI_API_KEY")
@@ -60,7 +62,7 @@ OLLAMA_URL = "http://127.0.0.1:11434/api/generate"
 CODING_PROVIDER = "ollama"
 
 # Provider option for general conversation: "gemini" or "ollama" (local)
-CONVERSATION_PROVIDER = "ollama"
+CONVERSATION_PROVIDER = "gemini"
 
 
 # ==================== SPEAKER VERIFICATION (BIOMETRICS) ====================
