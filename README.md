@@ -91,9 +91,10 @@ To guarantee no two website or webpage builds look identical, JARVIS applies dyn
 * **Bidirectional Speech Translation**: Integrates robust translation pipelines to translate incoming Telugu speech commands into structured English instructions for JARVIS's intent router, and then translate the English response back to natural conversational Telugu script before speaking.
 * **Dynamic Language Switcher**: Supports voice triggers such as *"speak in telugu"*, *"speak in hindi"*, etc., dynamically remapping voices to appropriate regional neural voice models (supporting Telugu, Hindi, Bengali, Tamil, Kannada, Malayalam, Marathi, Urdu, Gujarati, and English).
 
-### 🌐 Resilient Offline Mode, Multi-Key Pool & Local Fallback (Ollama)
+### 🌐 Resilient Offline Mode, Multi-Key Pool & Multi-Cloud Fallback (ChatGPT & Ollama)
 * **Multi-Key API Pool & Auto-Rotation**: Support for a comma-separated list of Gemini API keys under `GEMINI_API_KEY` in `.env`. When the active key hits the 18 requests-per-minute (RPM) safety threshold or returns a `429 Quota Exceeded` error, JARVIS automatically rotates to the next key in the pool, ensuring uninterrupted cloud services.
-* **Separated Local Dual-Model Architecture (Ollama)**: Automatically splits offline fallback and coding duties:
+* **Secondary ChatGPT Fallback**: In the event that all Gemini API keys in the pool are exhausted or return errors, JARVIS automatically falls back to OpenAI's ChatGPT (specifically `gpt-4o-mini`, configured via `OPENAI_API_KEY` and `AI_MODEL` in `.env`). This uses a fast, direct REST payload with token limitations (capped at `150` max tokens) to ensure prompt responses with minimum token consumption.
+* **Separated Local Dual-Model Architecture (Ollama)**: If both Gemini and ChatGPT cloud endpoints are offline or return errors, JARVIS automatically routes queries to local Ollama:
   - **General conversational queries** route to **`llama3:latest`** (configured via `OLLAMA_MODEL`).
   - **Autonomous coding & website builds** route directly to the highly optimized **`qwen2.5-coder:7b`** (configured via `OLLAMA_CODING_MODEL`).
 * **Self-Healing Auto-Start**: If the local Ollama server is offline when a cloud API failure or fallback triggers, JARVIS automatically locates and launches the `ollama.exe` server in the background (hidden window) and polls the port (`11434`) for up to 10 seconds to ensure it is fully initialized before retrying your command.

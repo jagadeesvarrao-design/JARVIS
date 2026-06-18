@@ -164,7 +164,7 @@ def handle_self_query(text):
         
         return (
             f"Sir, I run on a dual-brain hybrid configuration:\n"
-            f"- My cloud brain uses Google's {primary_cloud} as the primary model, with Flash and Pro fallbacks.\n"
+            f"- My cloud brain uses Google's {primary_cloud} as the primary model, with Flash, Pro, and ChatGPT (gpt-4o-mini) fallbacks.\n"
             f"- My local neural engine uses Ollama with '{local_model}' for general conversation and '{coding_model}' for coding tasks.\n"
             f"Currently, my default conversation provider is set to '{conv_provider}'."
         )
