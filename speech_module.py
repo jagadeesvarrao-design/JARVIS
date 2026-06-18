@@ -1,10 +1,10 @@
 import time
 import os
 import tempfile
+import speech_recognition as sr
 
 class SpeechRecognizer:
     def __init__(self):
-        import speech_recognition as sr
         self.recognizer = sr.Recognizer()
         self.microphone = sr.Microphone(sample_rate=16000, chunk_size=512)
         
@@ -220,7 +220,6 @@ class SpeechRecognizer:
                 elif te_text:
                     return te_text.lower()
                 
-                import speech_recognition as sr
                 raise sr.UnknownValueError()
 
             except sr.WaitTimeoutError:
