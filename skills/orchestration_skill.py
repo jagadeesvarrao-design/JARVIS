@@ -1,5 +1,5 @@
 import re
-from agent_module import OrchestratorAgent
+
 
 def get_triggers():
     # Matches commands starting with 'orchestrate', 'plan and execute', or 'run plan'
@@ -10,6 +10,7 @@ def get_triggers():
     ]
 
 def execute(jarvis_instance, text, original_text, match=None):
+    from agent_module import OrchestratorAgent
     query = match.group(1).strip()
     jarvis_instance._respond("Initializing supervisor orchestrator core, please hold...")
     

@@ -3,14 +3,14 @@ import psutil # Checks battery/CPU
 import schedule # Handles timing
 import threading
 import config # For speaking (Independent of main loop)
-from google import genai
+
 # --- NEW IMPORTS REQUIRED FOR VISION ---
 from vision_module import VisionSystem
 from automation_module import ApplicationController
 from ai_module import AIBrain
 
 class ProactiveAgent:
-    def __init__(self):
+    def __init__(self, voice_queue=None, log_to_dashboard_cb=None):
         self.running = True
         self.last_battery = 100
 
@@ -33,15 +33,19 @@ class ProactiveAgent:
     def speak(self, text):
         """Separate speaking channel for background alerts"""
         print(f"⚡ [PROACTIVE]: {text}")
-        try:
-            # We use the isolated voice_queue from jarvis.py
-            from jarvis import voice_queue
-            voice_queue.put(text)
-        except ImportError:
-            print("⚠️ Proactive Module could not reach voice_queue.")
+        if self.voice_queue is not None:
+            self.voice_queue.put(text)
+        else:
+            try:
+                # We use the isolated voice_queue from jarvis.py
+                from jarvis import voice_queue
+                voice_queue.put(text)
+            except ImportError:
+                print("⚠️ Proactive Module could not reach voice_queue.")
     
     def _call_vision_api(self, img, prompt):
         """Calls Gemini directly using config.py and auto-rotates keys/models on errors."""
+        from google import genai
         max_attempts = len(config.API_KEYS_POOL) * len(config.AI_MODELS)
         attempts = 0
         model_index = 0
@@ -167,12 +171,18 @@ class ProactiveAgent:
             # 3. Check Screen for Errors (VISION ENGINE INTERGATION)
             vision_alert = self._analyze_screen_context()
             if vision_alert:
-                try:
-                    # Attempt to log to GUI dashboard if it exists
-                    from jarvis import log_to_dashboard
-                    log_to_dashboard("jarvis", vision_alert)
-                except ImportError:
-                    pass
+                if self.log_to_dashboard_cb is not None:
+                    try:
+                        self.log_to_dashboard_cb("jarvis", vision_alert)
+                    except Exception as le:
+                        print(f"⚠️ Failed to log to dashboard callback: {le}")
+                else:
+                    try:
+                        # Attempt to log to GUI dashboard if it exists
+                        from jarvis import log_to_dashboard
+                        log_to_dashboard("jarvis", vision_alert)
+                    except ImportError:
+                        pass
                 self.speak(vision_alert)
 
             # Sleep 10 seconds to save CPU & API limits

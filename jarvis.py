@@ -2,19 +2,6 @@ import sys
 import os
 os.environ["CUDA_VISIBLE_DEVICES"] = ""
 
-# Try to resolve DLL directory for torch if on Windows to prevent loading conflicts
-try:
-    if os.name == 'nt':
-        import importlib.util
-        spec = importlib.util.find_spec("torch")
-        if spec is not None and spec.submodule_search_locations:
-            venv_torch_lib = os.path.join(spec.submodule_search_locations[0], "lib")
-            if os.path.exists(venv_torch_lib):
-                os.add_dll_directory(venv_torch_lib)
-    import torch
-except Exception:
-    pass
-
 try:
     sys.stdout.reconfigure(encoding='utf-8')
     sys.stderr.reconfigure(encoding='utf-8')
@@ -2098,9 +2085,59 @@ Return ONLY a valid JSON object matching this schema:
             else:
                 pass
 
+def ensure_ollama_running():
+    print("🧠 [SYSTEM]: Checking Ollama status in background...")
+    import requests
+    import subprocess
+    import config
+    import os
+    import time
+    
+    url_tags = config.OLLAMA_URL.replace("/api/generate", "/api/tags")
+    try:
+        resp = requests.get(url_tags, timeout=2.0)
+        if resp.status_code == 200:
+            print("🧠 [SYSTEM]: Ollama is online and connected.")
+            return
+    except Exception:
+        pass
+        
+    print("🚀 [SYSTEM]: Local Ollama server is offline. Attempting to start it silently...")
+    try:
+        ollama_bin = "ollama"
+        default_path = os.path.join(os.environ.get("LOCALAPPDATA", ""), r"Programs\Ollama\ollama.exe")
+        if os.path.exists(default_path):
+            ollama_bin = default_path
+            
+        subprocess.Popen(
+            [ollama_bin, "serve"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
+        )
+        
+        # Poll the server for up to 10 seconds to confirm connection
+        for _ in range(10):
+            try:
+                resp = requests.get(url_tags, timeout=1.0)
+                if resp.status_code == 200:
+                    print("🧠 [SYSTEM]: Ollama server started successfully and connected.")
+                    return
+            except Exception:
+                pass
+            time.sleep(1.0)
+        print("⚠️ [SYSTEM]: Ollama server started in background but was slow to connect.")
+    except Exception as e:
+        print(f"❌ [SYSTEM]: Failed to automatically launch Ollama: {e}")
+
 if __name__ == "__main__":
+    # 0. Start OLLAMA BACKGROUND LAUNCHER
+    t_ollama = threading.Thread(target=ensure_ollama_running)
+    t_ollama.daemon = True
+    t_ollama.start()
+
     # 1. Start PROACTIVE BACKGROUND BRAIN
-    background_brain = ProactiveAgent()
+    background_brain = ProactiveAgent(voice_queue=voice_queue, log_to_dashboard_cb=log_to_dashboard)
     t = threading.Thread(target=background_brain.start_monitoring)
     t.daemon = True 
     t.start()

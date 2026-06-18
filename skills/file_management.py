@@ -1,6 +1,35 @@
 import os
 import shutil
-from jarvis import get_desktop_path, find_folder_globally
+# --- PATH FINDER ---
+def get_desktop_path():
+    return os.path.join(os.environ['USERPROFILE'], 'OneDrive', 'Desktop')
+
+# --- GLOBAL SEARCH ---
+def find_folder_globally(folder_name):
+    folder_name = folder_name.lower() 
+    user_path = os.environ['USERPROFILE']
+    
+    search_dirs = [
+        get_desktop_path(),
+        os.path.join(user_path, "Documents"),
+        os.path.join(user_path, "Downloads"),
+        os.path.join(user_path, "Pictures"),
+        os.path.join(user_path, "Music"),
+        os.path.join(user_path, "Videos")
+    ]
+    
+    for root in search_dirs:
+        if not os.path.exists(root): continue
+        possible_path = os.path.join(root, folder_name) 
+        if os.path.exists(possible_path): return possible_path
+
+        try:
+            for item in os.listdir(root):
+                if item.lower() == folder_name and os.path.isdir(os.path.join(root, item)):
+                    return os.path.join(root, item)
+        except: pass
+    
+    return None
 
 def get_triggers():
     return ["create folder", "create file", "open folder", "delete folder"]

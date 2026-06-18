@@ -5,7 +5,6 @@ import time
 import urllib.parse
 import threading
 from ddgs import DDGS
-from playwright.sync_api import sync_playwright
 
 def get_triggers():
     # Matches buy, shop, purchase, order, or find lowest price commands
@@ -56,6 +55,7 @@ def check_domain_safety(jarvis, domain):
 def run_playwright_automation(jarvis, url, store_name, product_name):
     jarvis._respond(f"Spawning browser session to automate checkout at {store_name}...")
     try:
+        from playwright.sync_api import sync_playwright
         with sync_playwright() as p:
             # Launch User's Preferred Google Chrome browser
             try:

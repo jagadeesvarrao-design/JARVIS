@@ -359,9 +359,9 @@ def run_benchmark():
     # ----------------------------------------------------
     # MODULE 11: skills folder
     # ----------------------------------------------------
-    print("\n[11/12] Benchmarking skills folder...")
+    print("\n[11/13] Benchmarking skills folder...")
     t_start = time.perf_counter()
-    from skills import file_management, orchestration_skill
+    from skills import file_management, orchestration_skill, shopper_agent
     t_import = time.perf_counter() - t_start
     print(f" - Import Time: {t_import*1000:.2f} ms")
     
@@ -370,7 +370,8 @@ def run_benchmark():
         "import_lag": t_import,
         "features": {
             "file_management_triggers": file_management.get_triggers(),
-            "orchestration_triggers": orchestration_skill.get_triggers()
+            "orchestration_triggers": orchestration_skill.get_triggers(),
+            "shopper_triggers": shopper_agent.get_triggers()
         },
         "test_results": []
     })
@@ -378,7 +379,7 @@ def run_benchmark():
     # ----------------------------------------------------
     # MODULE 12: dashboard.py & jarvis_gui.py
     # ----------------------------------------------------
-    print("\n[12/12] Benchmarking dashboard.py and GUI module imports...")
+    print("\n[12/13] Benchmarking dashboard.py and GUI module imports...")
     t_start = time.perf_counter()
     # Verify GUI libraries import times
     import PyQt5
@@ -393,6 +394,44 @@ def run_benchmark():
             "hud_dashboard_framework": "Streamlit (Fast HUD)"
         },
         "test_results": []
+    })
+
+    # ----------------------------------------------------
+    # MODULE 13: logger_module.py
+    # ----------------------------------------------------
+    print("\n[13/13] Benchmarking logger_module.py...")
+    t_start = time.perf_counter()
+    import logger_module
+    t_import = time.perf_counter() - t_start
+    print(f" - Import Time: {t_import*1000:.2f} ms")
+    
+    t_exec = time.perf_counter()
+    logger = logger_module.ActivityLogger(filename="jarvis_benchmark_logs.json")
+    t_init = time.perf_counter() - t_exec
+    
+    t_exec = time.perf_counter()
+    logger.log_message("system", "Diagnostic benchmark trace.")
+    t_write = time.perf_counter() - t_exec
+    
+    # Cleanup temp log file
+    try:
+        if os.path.exists("jarvis_benchmark_logs.json"):
+            os.remove("jarvis_benchmark_logs.json")
+    except:
+        pass
+        
+    print(f" - Init latency: {t_init*1000:.2f} ms | Write latency: {t_write*1000:.2f} ms")
+    
+    report_data.append({
+        "module": "logger_module.py",
+        "import_lag": t_import,
+        "features": {
+            "log_format": "JSON array of role-message objects"
+        },
+        "test_results": [
+            {"name": "Constructor __init__", "latency": t_init, "status": "Success"},
+            {"name": "log_message() write", "latency": t_write, "status": "Success"}
+        ]
     })
 
     # ----------------------------------------------------

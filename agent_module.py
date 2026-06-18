@@ -503,63 +503,88 @@ class MemoryAgent:
         self.db_path = os.path.join(os.environ['USERPROFILE'], 'OneDrive', 'Desktop', 'JARVIS_Memory')
         
         print("🧠 Initializing Memory Core...")
-        
-        # Try to resolve DLL directory for torch if on Windows
         try:
-            if os.name == 'nt':
-                import importlib.util
-                spec = importlib.util.find_spec("torch")
-                if spec is not None and spec.submodule_search_locations:
-                    venv_torch_lib = os.path.join(spec.submodule_search_locations[0], "lib")
-                    if os.path.exists(venv_torch_lib):
-                        os.add_dll_directory(venv_torch_lib)
-        except Exception:
-            pass
-
-        # Windows-Safe PyTorch DLL Integrity Check via Subprocess Timeout
-        pytorch_working = False
-        try:
-            import importlib.util
-            if importlib.util.find_spec("torch") is not None and importlib.util.find_spec("chromadb") is not None:
-                import subprocess
-                # Run subprocess with DLL path modification
-                res = subprocess.run(
-                    [sys.executable, "-c", "import os, sys, importlib.util; spec = importlib.util.find_spec('torch'); venv_torch_lib = os.path.join(spec.submodule_search_locations[0], 'lib') if spec and spec.submodule_search_locations else None; os.add_dll_directory(venv_torch_lib) if venv_torch_lib and os.path.exists(venv_torch_lib) else None; import torch; import chromadb; print('OK')"],
-                    capture_output=True,
-                    text=True,
-                    timeout=20.0
-                )
-                if res.returncode == 0 and "OK" in res.stdout:
-                    pytorch_working = True
-                else:
-                    print("⚠️ PyTorch dynamic DLL load check failed in subprocess. Bypassing ChromaDB.")
-                    pytorch_working = False
-            else:
-                pytorch_working = False
-        except subprocess.TimeoutExpired:
-            print("⚠️ PyTorch Import Timeout: Subprocess hung due to DLL loader lock. Gracefully bypassing ChromaDB.")
-            pytorch_working = False
-        except Exception as pe:
-            print(f"⚠️ Memory pre-check error: {pe}. Bypassing ChromaDB.")
-            pytorch_working = False
+            import requests
+            import chromadb
+            import config
             
-        if pytorch_working:
+            # Simple check if chromadb is installed and Ollama is online
+            ollama_online = False
             try:
-                import chromadb
-                from chromadb.utils import embedding_functions
+                resp = requests.get(config.OLLAMA_URL.replace("/api/generate", "/api/tags"), timeout=2.0)
+                if resp.status_code == 200:
+                    ollama_online = True
+            except:
+                pass
                 
+            if ollama_online:
+                class OllamaEmbeddingFunction(chromadb.EmbeddingFunction):
+                    def __init__(self, url="http://127.0.0.1:11434/api/embeddings"):
+                        self.url = url
+                        self.model_name = "llama3:latest"
+                        
+                        # Self-heal/resolve model: check tags
+                        try:
+                            import config
+                            self.model_name = getattr(config, "OLLAMA_MODEL", "llama3:latest")
+                            url_tags = url.replace("/api/embeddings", "/api/tags")
+                            resp2 = requests.get(url_tags, timeout=2.0)
+                            if resp2.status_code == 200:
+                                models = [m["name"] for m in resp2.json().get("models", [])]
+                                # If nomic-embed-text is installed, prefer it
+                                for m in models:
+                                    if "nomic-embed" in m.lower():
+                                        self.model_name = m
+                                        break
+                        except Exception:
+                            pass
+
+                    def __call__(self, input: chromadb.Documents) -> chromadb.Embeddings:
+                        embeddings = []
+                        for text in input:
+                            try:
+                                response = requests.post(
+                                    self.url,
+                                    json={"model": self.model_name, "prompt": text},
+                                    timeout=5.0
+                                )
+                                if response.status_code == 200:
+                                    embeddings.append(response.json()["embedding"])
+                                else:
+                                    raise Exception(f"status {response.status_code}")
+                            except Exception as e:
+                                # If it fails, fallback to a dummy embedding
+                                size = 4096 if "llama3" in self.model_name.lower() else 768
+                                embeddings.append([0.0] * size)
+                        return embeddings
+
                 self.client = chromadb.PersistentClient(path=self.db_path)
-                self.embed_fn = embedding_functions.SentenceTransformerEmbeddingFunction(model_name="all-MiniLM-L6-v2")
-                self.collection = self.client.get_or_create_collection(
-                    name="jarvis_long_term_memories",
-                    embedding_function=self.embed_fn
-                )
+                self.embed_fn = OllamaEmbeddingFunction(url=config.OLLAMA_URL.replace("/api/generate", "/api/embeddings"))
+                try:
+                    self.collection = self.client.get_or_create_collection(
+                        name="jarvis_long_term_memories",
+                        embedding_function=self.embed_fn
+                    )
+                except ValueError as ve:
+                    if "Embedding function conflict" in str(ve) or "already exists" in str(ve):
+                        print("🔄 Legacy embedding conflict detected. Overwriting collection...")
+                        try:
+                            self.client.delete_collection("jarvis_long_term_memories")
+                        except:
+                            pass
+                        self.collection = self.client.get_or_create_collection(
+                            name="jarvis_long_term_memories",
+                            embedding_function=self.embed_fn
+                        )
+                    else:
+                        raise ve
                 self.working = True
-                print("✅ Memory Core Online.")
-            except Exception as e:
-                print(f"⚠️ MEMORY WARNING: {e}")
+                print("✅ Memory Core Online (Ollama Embeddings).")
+            else:
+                print("⚠️ Memory Core Offline: Ollama is not running.")
                 self.working = False
-        else:
+        except Exception as e:
+            print(f"⚠️ MEMORY WARNING: {e}")
             self.working = False
 
     def remember(self, text, metadata={"type": "general"}):

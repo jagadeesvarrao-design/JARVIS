@@ -1,9 +1,6 @@
-from google import genai
-from google.genai import types
 import config
 import identity
 import os
-import PIL.Image
 import re
 import time
 import requests # NEW: Required for Ollama API calls
@@ -25,11 +22,11 @@ class AIBrain:
             self.models = ["gemini-2.5-flash-lite", "gemini-2.5-flash", "gemini-2.5-pro"]
             
         self.current_model_index = 0
-        self._connect_client()
 
     def _connect_client(self):
         """Connects the client and resets the counter for the new key"""
         try:
+            from google import genai
             if not self.api_keys:
                 self.client = None
                 print("❌ Connection Error: No active keys in the pool.")
@@ -164,6 +161,7 @@ class AIBrain:
         )
         if self.client and current_model and system_rules:
             try:
+                from google.genai import types
                 response = self.client.models.generate_content(
                     model=current_model,
                     contents=compression_prompt,
@@ -209,6 +207,10 @@ class AIBrain:
         use_ollama = False
         if hasattr(config, "CONVERSATION_PROVIDER") and config.CONVERSATION_PROVIDER == "ollama":
             use_ollama = True
+            
+        # Lazy client initialization on first active API query
+        if not use_ollama and self.client is None and self.api_keys:
+            self._connect_client()
             
         if use_ollama or not self.client or not self.api_keys: 
             # If completely failed to connect to Gemini at boot, force local
@@ -296,7 +298,9 @@ class AIBrain:
                 self.request_count += 1
                 
                 if image_path:
-                    img = PIL.Image.open(image_path)
+                    import PIL.Image as PIL_Image
+                    from google.genai import types
+                    img = PIL_Image.open(image_path)
                     response = self.client.models.generate_content(
                         model=current_model,
                         contents=[img, "Describe this image."],
@@ -304,6 +308,7 @@ class AIBrain:
                     )
                     img.close()
                 else:
+                    from google.genai import types
                     full_prompt = f"Context: {context}\nUSER: {user_text}"
                     response = self.client.models.generate_content(
                         model=current_model,
