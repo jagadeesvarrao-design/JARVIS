@@ -140,7 +140,7 @@ class AIBrain:
         }
         
         try:
-            response = requests.post(config.OLLAMA_URL, json=payload, timeout=30)
+            response = requests.post(config.OLLAMA_URL, json=payload, timeout=120)
             if response.status_code == 200:
                 answer = response.json().get("response", "I could not generate a thought, Sir.")
                 return answer.strip()
@@ -206,7 +206,11 @@ class AIBrain:
     # PRIMARY ROUTING LOGIC
     # =================================================================
     def get_response(self, user_text, image_path=None, context=None):
-        if not self.client or not self.api_keys: 
+        use_ollama = False
+        if hasattr(config, "CONVERSATION_PROVIDER") and config.CONVERSATION_PROVIDER == "ollama":
+            use_ollama = True
+            
+        if use_ollama or not self.client or not self.api_keys: 
             # If completely failed to connect to Gemini at boot, force local
             raw_answer = self._get_ollama_fallback(user_text, context)
             return self._enforce_line_limits(user_text, raw_answer)
@@ -265,6 +269,7 @@ class AIBrain:
                     f"Personality: {identity.PERSONALITY}\n"
                     f"{complexity_rules}\n"
                     f"CRITICAL RULES:\n"
+                    f"   - If the operator asks you to greet someone (e.g., 'greet my mother', 'say hello to my father', 'greet them'), you must speak the greeting directly to that person in the first person as JARVIS (using the target language if specified), rather than explaining how the operator should greet them or translating the greeting.\n"
                     f"   - If the user asks for an image, you MUST end your response with this EXACT tag: [IMAGE: <search_query>]\n"
                     f"   - If the user asks about a person who is not a well-known historical or public figure, and there is no information about them in the MEMORY block, do not hallucinate or make up details. Instead, politely state that you do not have information about them, or ask the user to tell you more about them so you can remember.\n"
                 )

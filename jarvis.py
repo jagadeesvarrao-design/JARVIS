@@ -929,6 +929,17 @@ Return ONLY a valid JSON object matching this schema:
     def _process_command_impl(self, text):
         original_text = text
         text = text.lower()
+        
+        # Correct common speech-to-text homophone errors for "greet"
+        text = re.sub(r'\b(?:great|great\s+great)\b(?=\s+(?:her|him|them|my|your|nanna|amma|mother|father|brother|sister|guest|parent))', 'greet', text)
+        text = re.sub(r'\bgreating\b', 'greeting', text)
+        text = text.replace("great greet", "greet").replace("great great", "greet")
+        
+        # Sync original_text if it was changed (and not containing Telugu script)
+        if text != original_text.lower():
+            if not re.search(r'[\u0C00-\u0C7F]', original_text):
+                original_text = text
+                
         print(f"👤 USER: {text}")
         
         # If waiting for interactive user response, redirect console inputs to input_queue
@@ -1567,7 +1578,7 @@ Return ONLY a valid JSON object matching this schema:
                 threading.Thread(target=run_browser_agent, daemon=True).start()
             return False
 
-        if text.startswith("write") or text.startswith("type"):
+        if (text.startswith("write ") or text.startswith("type ")) and not (text.startswith("types ") or text.startswith("type of ") or text.startswith("types of ")):
             self._respond("Typing...")
             self.automation.type_text(text)
             return False

@@ -161,7 +161,7 @@ class RotatingModel:
         }
         
         try:
-            response = requests.post(config.OLLAMA_URL, json=payload, timeout=60.0)
+            response = requests.post(config.OLLAMA_URL, json=payload, timeout=120.0)
             if response.status_code == 200:
                 answer = response.json().get("response", "I could not generate a thought, Sir.")
                 return MockResponse(answer.strip())

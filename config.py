@@ -59,6 +59,9 @@ OLLAMA_URL = "http://127.0.0.1:11434/api/generate"
 # Provider options: "gemini" or "ollama" (local)
 CODING_PROVIDER = "ollama"
 
+# Provider option for general conversation: "gemini" or "ollama" (local)
+CONVERSATION_PROVIDER = "ollama"
+
 
 # ==================== SPEAKER VERIFICATION (BIOMETRICS) ====================
 SPEAKER_VERIFICATION_ENABLED = False  # Set to True to enable voice verification

@@ -100,8 +100,13 @@ class ProactiveAgent:
             active_window = self.automation.get_active_window_title()
             
             # 1. Check if user is coding
-            target_apps = ["visual studio code", "code", "cmd", "powershell", "terminal", "pycharm"]
-            if not any(app in active_window for app in target_apps):
+            target_apps = ["visual studio code", "cmd", "powershell", "terminal", "pycharm"]
+            is_coding_window = any(app in active_window for app in target_apps)
+            if not is_coding_window:
+                import re
+                is_coding_window = bool(re.search(r'\bcode\b', active_window))
+                
+            if not is_coding_window:
                 self.error_start_time = None 
                 return None
                 
