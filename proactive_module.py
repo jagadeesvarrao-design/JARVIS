@@ -13,6 +13,8 @@ class ProactiveAgent:
     def __init__(self, voice_queue=None, log_to_dashboard_cb=None):
         self.running = True
         self.last_battery = 100
+        self.voice_queue = voice_queue
+        self.log_to_dashboard_cb = log_to_dashboard_cb
 
         # --- INITIALIZE VISION & AI MODULES ---
         self.vision = VisionSystem()
