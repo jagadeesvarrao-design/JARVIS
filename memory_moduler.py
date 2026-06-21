@@ -197,7 +197,7 @@ class MemorySystem:
 
                 # Self-heal invalid LLM trailing-colon or missing-value syntax (e.g., "key": ,)
                 raw_json = re.sub(r':\s*,', ': [],', raw_json)
-                raw_json = re.sub(r':\s*([\}\]])', ': null \1', raw_json)
+                raw_json = re.sub(r':\s*([\}\]])', r': null \1', raw_json)
 
                 try:
                     learned = json.loads(raw_json)

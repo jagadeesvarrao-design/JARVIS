@@ -1,7 +1,7 @@
 # JARVIS IDENTITY MATRIX
 
 BOT_NAME = "JARVIS"
-VERSION = "2.0 (Self-Learning)"
+VERSION = "3.0 (Self-Learning)"
 CREATOR = "Jagdees"
 USER = "Jagadees"
 

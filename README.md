@@ -1,5 +1,5 @@
 <div align="center">
-  <h1>🤖 JARVIS</h1>
+  <h1>🤖 JARVIS v3.0</h1>
   <p><strong>A Next-Generation Autonomous Voice Assistant, Web Designer & Multi-Agent Orchestrator</strong></p>
 
   [![Python](https://img.shields.io/badge/Python-3.11%20%7C%203.12-blue.svg)](https://www.python.org/)
@@ -141,15 +141,28 @@ assistent/
 ├── jarvis_gui.py          # PyQt5 HUD Dashboard & User Interface Overlay
 ├── agent_module.py        # Workers: MemoryAgent, NewsAgent, ProjectAgent, BrowserAgent
 ├── ai_module.py           # Model Wrapper & Google GenAI API Router
-├── speech_module.py       # SpeechRecognition & Voice Inputs
+├── speech_module.py       # SpeechRecognizer (optimized Voice ear)
 ├── automation_module.py   # Windows UI Automation (pywinauto, pyautogui)
 ├── contact_module.py      # Contact directory & phone/email lookups
-├── config.py              # System Settings & API keys pool configuration
+├── config.py              # System Settings (DOTENV integration)
 ├── fix_my_key.py          # API Key Pools Diagnostics Tool
 ├── check_deps.py          # System Dependency Audit Script
 ├── wakeup_jarvis.bat      # Startup sequence bootloader
-└── requirements.txt       # Project Dependencies
+├── requirements.txt       # Project Dependencies
+│
+└── skills/                # 🔌 Plugin-based Dynamic Skills Engine
+    ├── email_skill.py        # Secure SMTP Email & attachments
+    ├── media_skill.py        # YouTube music & OS media controls
+    ├── recorder_skill.py     # Video, audio, and screen recording
+    └── whatsapp_skill.py     # WhatsApp Desktop messaging automation
 ```
+
+### 🆕 Key Upgrades in Version 3.0
+* **Plugin-based Dynamic Skills Architecture**: Heavy core modules extracted from `jarvis.py` into dynamically loaded skill plugins in `skills/`.
+* **Zero-Lag Asynchronous Biometric Load**: Deferred SpeechBrain model loading and Pygame mixer initialization to background threads, dropping cold startup time significantly.
+* **Import-Time Deadlock Prevention**: De-registered concurrent module imports at load-time to prevent PyQt5 and Pygame mixer thread deadlocks.
+* **Global Regex Caching**: Cached compiled regular expression matching patterns for Indian scripts and user intents to save CPU cycles.
+
 
 ---
 
