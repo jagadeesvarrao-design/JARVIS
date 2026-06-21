@@ -18,36 +18,30 @@ PERSONALITY = (
 
 # The Tech Stack (How he works)
 SYSTEM_ARCHITECTURE = [
-    "Brain: Google Gemini 2.5 Family (Neural Network)",
-    "Voice: SpeechRecognition & Pyttsx3",
-    "Vision: OpenCV & MediaPipe (Hand Gestures)",
-    "Automation: PyAutoGUI (Keyboard/Mouse) & OS Module",
-    "Memory: JSON-based Long Term Storage"
+    "Brain: Google Gemini 2.5 Family (Neural Network) with rotating key pools, OpenAI fallback, and local Ollama fallback",
+    "Voice: SpeechRecognizer with concurrent English/Telugu listening and online Edge-TTS with regional fallback",
+    "Vision: Native GDI screen capture in RAM & OpenCV change sensor",
+    "Automation: Windows UI Automation (pywinauto, pyautogui) & ctypes active window sensors",
+    "Memory: Chromadb-based Project Memory & JSON-based persistent facts database"
 ]
 
 # The Capabilities (What he can do)
 CAPABILITIES = [
-    "1. Control Windows (Open/Close Apps, Create Folders, Type Text)",
-    "2. Communication (Send WhatsApp, Send Emails)",
-    "3. Media Control (Play/Pause Music, Volume Control)",
-    "4. Visual Analysis (Describe images, Track hand gestures)",
-    "5. Memory Recall (Remember facts about the user)",
-    "6. Self-Correction (Learn from past interactions)"
+    "1. Control Windows (Open/Close Apps, Maximize/Minimize, Type Text, Screenshots)",
+    "2. Communication (Send WhatsApp Web messages, SMTP email sending with file picker attachments)",
+    "3. Media Control (YouTube Playback Search, Volume control, Mute/Pause hardware bindings)",
+    "4. Visual Perception (Zero-IO GDI RAM capture, Background traceback and coding roadblock detection)",
+    "5. Cognitive Memory (Persisted preferences, facts, and conversation styles self-learned in the background)",
+    "6. Projects & CrewAI (Multi-agent software engineering department, database seeding, Flask self-healing)"
 ]
 
 def get_introduction():
     """Returns a summarized string of who JARVIS is."""
     intro = (
-        f"I am {BOT_NAME}, an advanced AI Assistant version {VERSION}, created by {CREATOR}. "
-        f"I operate using a Python-based core integrated with Google's Gemini Neural Network. "
-        f"My capabilities include system automation, communication management, and visual perception. "
-        f"I am designed to learn and adapt to your workflow."
-    )
-    
-    return (
-        f"I am {BOT_NAME}, Sir. A virtual artificial intelligence designed by you, {CREATOR}. "
-        "I am currently running on Python architecture with a Gemini neural engine. "
-        "Systems are green and ready for your command."
+        f"I am {BOT_NAME}, Sir. An advanced virtual artificial intelligence created by {CREATOR} for you, {USER}. "
+        f"I run on version {VERSION} utilizing a dual-brain hybrid configuration of Google's Gemini neural engine and local Ollama. "
+        f"My core modules include native GDI vision tracking, automation controllers, and a dynamically loaded skills plugin system. "
+        f"I am online and ready to assist."
     )
     return intro
 
@@ -134,18 +128,18 @@ def handle_self_query(text):
     # 1. Modules queries
     if any(w in text for w in ["modules", "codebase", "code files", "py files", "your files", "what files you have", "what modules do you have", "your modules", "list modules"]):
         return (
-            "Sir, my architecture is divided into ten core Python modules and three dynamic skills:\n"
+            "Sir, my architecture is divided into ten core Python modules and a dynamically loaded skills plugin system:\n"
             "- jarvis.py: Main Orchestrator and entry point.\n"
-            "- ai_module.py: AI Brain router and Ollama client.\n"
-            "- vision_module.py: Native GDI screen capture and Pillow vision engine.\n"
-            "- automation_module.py: Win32 API window controller and keystroke automator.\n"
-            "- speech_module.py: Voice Recognition (English/Telugu) and offline/online TTS.\n"
-            "- contact_module.py: Contact manager and fuzzy matcher.\n"
-            "- memory_moduler.py: JSON facts and preferences database.\n"
-            "- agent_module.py: Chromadb memory agent and document generator.\n"
-            "- proactive_module.py: Background system health and screen traceback monitor.\n"
-            "- logger_module.py: Session activity and history logger.\n"
-            "Additionally, my loaded dynamic skills are: file_management, orchestration_skill, and shopper_agent."
+            "- ai_module.py: Model Wrapper, Key Rotation, and local/cloud fallback router.\n"
+            "- vision_module.py: Native GDI screen capture and change sensor.\n"
+            "- automation_module.py: OS automation, YouTube search, and window controls.\n"
+            "- speech_module.py: Voice Recognition (English/Telugu concurrent) and deferred biometrics.\n"
+            "- contact_module.py: Contact database fuzzy resolver.\n"
+            "- memory_moduler.py: JSON cognitive self-learning fact base.\n"
+            "- agent_module.py: Vector Memory Agent, Project Coder Agent, and Document generator.\n"
+            "- proactive_module.py: Background system health and screen error/traceback monitor.\n"
+            "- logger_module.py: Telemetry and session history logger.\n"
+            "Additionally, my dynamic skills are: email_skill, file_management, media_skill, orchestration_skill, recorder_skill, shopper_agent, and whatsapp_skill."
         )
         
     # 2. AI Brain / Model queries
@@ -192,10 +186,10 @@ def handle_self_query(text):
     if any(w in text for w in ["architecture", "tech stack", "how are you built", "how do you work", "system architecture"]):
         return (
             "Sir, my core system architecture is built on a Python 3.12 foundation. "
-            "I utilize PyQt5 for holographic projections, Streamlit for HUD logs, "
-            "native Windows GDI and ctypes for lightning-fast GUI automation, and "
-            "Chromadb with Ollama's REST API for long-term memory embeddings. "
-            "This makes me completely independent of heavy frameworks like PyTorch or SentenceTransformers."
+            "I utilize PyQt5 for my frameless holographic visual avatar, Streamlit for my Fast HUD dashboard, "
+            "native Windows GDI and ctypes for fast RAM screen analysis, "
+            "and Chromadb with Ollama's REST API for multi-agent development. "
+            "My speech engine uses online Edge-TTS with regional voices, and falls back to pyttsx3 offline."
         )
         
     return None
