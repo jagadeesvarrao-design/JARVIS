@@ -41,6 +41,15 @@ from ddgs import DDGS
 from agent_module import ProjectAgent
 from proactive_module import ProactiveAgent
 
+# Cached Regular Expressions for Script Detection
+TELUGU_SCRIPT_RE = re.compile(r'[\u0C00-\u0C7F]')
+DEVANAGARI_SCRIPT_RE = re.compile(r'[\u0900-\u097F]')
+BENGALI_SCRIPT_RE = re.compile(r'[\u0980-\u09FF]')
+TAMIL_SCRIPT_RE = re.compile(r'[\u0B80-\u0BFF]')
+KANNADA_SCRIPT_RE = re.compile(r'[\u0C80-\u0CFF]')
+MALAYALAM_SCRIPT_RE = re.compile(r'[\u0D00-\u0D7F]')
+GUJARATI_SCRIPT_RE = re.compile(r'[\u0A80-\u0AFF]')
+
 # Create the queue
 voice_queue = queue.Queue()
 stop_speech_event = threading.Event()
@@ -176,9 +185,12 @@ def voice_worker():
         except Exception:
             pass
 
-# Start the voice worker thread in the background
-voice_thread = threading.Thread(target=voice_worker, name="VoiceWorker", daemon=True)
-voice_thread.start()
+voice_thread = None
+def start_voice_thread():
+    global voice_thread
+    if voice_thread is None or not voice_thread.is_alive():
+        voice_thread = threading.Thread(target=voice_worker, name="VoiceWorker", daemon=True)
+        voice_thread.start()
 
 
 # --- DASHBOARD LOGGER ---
@@ -293,6 +305,9 @@ class JARVIS:
         # Dynamic Skills System initialization
         self.skills = []
         self.load_skills()
+        
+        # Start voice worker thread to prevent import-time deadlock
+        start_voice_thread()
 
     def load_skills(self):
         self.skills = []
@@ -385,7 +400,7 @@ class JARVIS:
             is_telugu = (voice_to_use == "te-IN-MohanNeural" or 
                          getattr(self, "temp_voice_override", None) == "te-IN-MohanNeural" or 
                          getattr(self, "active_voice", None) == "te-IN-MohanNeural")
-            if is_telugu and not re.search(r'[\u0C00-\u0C7F]', text):
+            if is_telugu and not TELUGU_SCRIPT_RE.search(text):
                 print(f"🤖 JARVIS (English response): {text}")
                 text = self.translate_to_telugu(text)
                 voice_to_use = "te-IN-MohanNeural"
@@ -395,25 +410,25 @@ class JARVIS:
             # Auto-detect script to match voice dynamically if no override/session voice is set
             if not voice_to_use:
                 # Check for Telugu script characters
-                if re.search(r'[\u0C00-\u0C7F]', text):
+                if TELUGU_SCRIPT_RE.search(text):
                     voice_to_use = "te-IN-MohanNeural"
                 # Check for Devanagari (Hindi) script characters
-                elif re.search(r'[\u0900-\u097F]', text):
+                elif DEVANAGARI_SCRIPT_RE.search(text):
                     voice_to_use = "hi-IN-MadhurNeural"
                 # Check for Bengali script characters
-                elif re.search(r'[\u0980-\u09FF]', text):
+                elif BENGALI_SCRIPT_RE.search(text):
                     voice_to_use = "bn-IN-BashkarNeural"
                 # Check for Tamil script characters
-                elif re.search(r'[\u0B80-\u0BFF]', text):
+                elif TAMIL_SCRIPT_RE.search(text):
                     voice_to_use = "ta-IN-ValluvarNeural"
                 # Check for Kannada script characters
-                elif re.search(r'[\u0C80-\u0CFF]', text):
+                elif KANNADA_SCRIPT_RE.search(text):
                     voice_to_use = "kn-IN-GaganNeural"
                 # Check for Malayalam script characters
-                elif re.search(r'[\u0D00-\u0D7F]', text):
+                elif MALAYALAM_SCRIPT_RE.search(text):
                     voice_to_use = "ml-IN-MidhunNeural"
                 # Check for Gujarati script characters
-                elif re.search(r'[\u0A80-\u0AFF]', text):
+                elif GUJARATI_SCRIPT_RE.search(text):
                     voice_to_use = "gu-IN-NiranjanNeural"
 
             if voice_to_use:
@@ -935,7 +950,7 @@ Return ONLY a valid JSON object matching this schema:
             return True
 
         # Check if the user's input contains Telugu script characters
-        if re.search(r'[\u0C00-\u0C7F]', original_text):
+        if TELUGU_SCRIPT_RE.search(original_text):
             self.temp_voice_override = "te-IN-MohanNeural"
             print("🎙️ Telugu command detected. Translating...")
             translated_text = self.translate_to_english(original_text)
@@ -1499,22 +1514,7 @@ Return ONLY a valid JSON object matching this schema:
                 
             return False
         
-        # ==========================================
-        # 🎵 LEVEL 3: MEDIA (Music & Youtube)
-        # ==========================================
-        if "play" in text and "music" in text:
-            self._respond("Playing on YouTube...")
-            self.automation.play_music(text)
-            return False
-        
-        if text.startswith("play") and len(text.split()) <= 6:
-            self._respond("Playing...")
-            self.automation.play_music(text)
-            return False
-
-        if any(x in text for x in ["volume", "mute", "pause", "next track", "previous track"]):
-            self.automation.media_control(text)
-            return False
+        # [Note: Media block has been migrated to dynamic skills/media_skill.py]
 
         # ==========================================
         # ⌨️ LEVEL 4: SYSTEM AUTOMATION
@@ -1598,51 +1598,7 @@ Return ONLY a valid JSON object matching this schema:
             if "Screenshot" in msg: self._respond(msg)
             return False
         
-        # ==========================================
-        # 🎙️ LEVEL 6: RECORDER (Audio & Video & Screen)
-        # ==========================================
-        if "record video" in text:
-            from agent_module import RecorderAgent
-            if self.rec_agent is None:
-                self.rec_agent = RecorderAgent()
-            self._respond("Starting Video Recording. Say 'Jarvis Stop Video' to end it.")
-            self.rec_agent.start_video_recording("jarvis_video")
-            return False
-
-        if "record screen" in text or "start screen recording" in text:
-            from agent_module import RecorderAgent
-            if self.rec_agent is None:
-                self.rec_agent = RecorderAgent()
-            self._respond("Starting Screen Recording. Say 'Jarvis Stop Screen Recording' to end it.")
-            self.rec_agent.start_screen_recording("jarvis_screen")
-            return False
-
-        if "stop video" in text or "stop screen recording" in text or "stop recording" in text:
-            if self.rec_agent is not None:
-                self.rec_agent.stop_recording() 
-                self._respond("Recording stopped.")
-                self.rec_agent = None
-            else:
-                self._respond("No active recording is running.")
-            return False
-
-        if "record voice" in text or "record audio" in text:
-            from agent_module import RecorderAgent
-            rec_agent = RecorderAgent()
-            self._respond("Recording started. Please press ENTER in the terminal window to stop.")
-            
-            # This runs in a thread but blocks the mic logic, so we wait for Key Press
-            file = rec_agent.start_audio_recording("jarvis_audio")
-            
-            # Since we used 'input()' inside the agent (simulated), we ask for name now
-            self._respond("Recording saved. What should I name this file?")
-            new_name = self._force_listen()
-            if new_name:
-                old_path = file
-                new_path = file.replace("jarvis_audio", new_name.replace(" ", "_"))
-                os.rename(old_path, new_path)
-                self._respond(f"Renamed to {new_name}.wav")
-            return False
+        # [Note: Recording block has been migrated to dynamic skills/recorder_skill.py]
 
         # ==========================================
         # 📰 LEVEL 7: NEWS ANCHOR
@@ -1672,112 +1628,9 @@ Return ONLY a valid JSON object matching this schema:
             self._respond(res)
             return False
         
-        # ==========================================
-        # 🟢 WHATSAPP (NATIVE DESKTOP APP)
-        # ==========================================
-        if "whatsapp" in text:
-            self._respond("Recipient?")
-            name = self._force_listen()
-            if not name: return False
-            
-            # 1. Get Number
-            contact = self.contacts.get_contact(name)
-            phone = None
-            if contact and "phone" in contact:
-                phone = contact["phone"]
-            else:
-                self._respond(f"I need the number for {name}. Please enter it.")
-                phone = pyautogui.prompt(text=f"Enter Number for {name}:", title="WhatsApp")
-            
-            if not phone: return False
-            
-            self._respond("Message?")
-            msg = self._force_listen()
-            
-            if msg:
-                self._respond("Opening WhatsApp Desktop...")
-                # 2. Use Windows Protocol to open the App directly
-                # Ensure number format (remove + if user typed it, we add it safely)
-                clean_phone = phone.replace("+", "").replace(" ", "")
-                
-                # Command to open WhatsApp App
-                os.system(f"start whatsapp://send?phone={clean_phone}&text={urllib.parse.quote(msg)}")
-                
-                # 3. Press Enter to send (Wait for app to load)
-                time.sleep(2) # Wait 2 seconds for app to open
-                pyautogui.press('enter')
-                self._respond("Message sent.")
-            return False
+        # [Note: WhatsApp block has been migrated to dynamic skills/whatsapp_skill.py]
 
-        # ==========================================
-        # 📧 EMAIL (FIXED + ATTACHMENTS)
-        # ==========================================
-        if "send" in text and "email" in text:
-            # Check Config First
-            if not hasattr(config, 'EMAIL_USER') or not config.EMAIL_USER:
-                self._respond("Error. Email credentials missing in config file.")
-                return False
-
-            self._respond("Recipient?")
-            name = self._force_listen()
-            if not name: return False
-            
-            # Get Email Address
-            email_addr = None
-            contact = self.contacts.get_contact(name)
-            if contact and "email" in contact:
-                email_addr = contact["email"]
-            else:
-                self._respond(f"I need the email for {name}. Please enter it.")
-                email_addr = pyautogui.prompt(text=f"Enter Email for {name}:", title="Email")
-            
-            if not email_addr: return False
-
-            self._respond("Subject?")
-            subj = self._force_listen() or "No Subject"
-            
-            self._respond("Message?")
-            body = self._force_listen() or "Sent via Jarvis"
-
-            # ✨ NEW: Ask for Attachment
-            self._respond("Do you want to attach a file? Say yes or no.")
-            attach_resp = self._force_listen()
-            
-            if attach_resp and "yes" in attach_resp.lower():
-                self._respond("Please select the file on screen.")
-                import tkinter as tk
-                from tkinter import filedialog
-                root = tk.Tk()
-                root.withdraw() # Hide empty window
-                self.attachment_path = filedialog.askopenfilename(title="Select Attachment")
-                root.destroy()
-            
-            self._respond("Sending...")
-            
-            try:
-                msg = EmailMessage()
-                msg['Subject'] = subj
-                msg['From'] = config.EMAIL_USER
-                msg['To'] = email_addr
-                msg.set_content(body)
-
-                if self.attachment_path and os.path.exists(self.attachment_path):
-                    with open(self.attachment_path, 'rb') as f:
-                        file_data = f.read()
-                        file_name = os.path.basename(self.attachment_path)
-                        msg.add_attachment(file_data, maintype='application', subtype='octet-stream', filename=file_name)
-                    print(f"📎 Attached: {self.attachment_path}")
-
-                with smtplib.SMTP_SSL('smtp.gmail.com', 465) as smtp:
-                    smtp.login(config.EMAIL_USER, config.EMAIL_PASS)
-                    smtp.send_message(msg)
-
-                self._respond("Email sent successfully.")
-                self.attachment_path = None 
-            except Exception as e:
-                print(f"❌ Email Error: {e}")
-                self._respond("Failed. Please check your internet or password.")
-            return False
+        # [Note: Email block has been migrated to dynamic skills/email_skill.py]
         
         # ==========================================
         # 🏗️  MULTI-AGENT FACTORY (CREWAI INTEGRATION)

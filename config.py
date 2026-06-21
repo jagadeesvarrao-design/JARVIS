@@ -38,8 +38,8 @@ TTS_VOICE = "en-IN-PrabhatNeural"
 
 
 # ==================== EMAIL SETTINGS ====================
-EMAIL_USER = "jagadeesvarrao@gmail.com" 
-EMAIL_PASS = "rqtu rijm qchy onbv" 
+EMAIL_USER = os.getenv("EMAIL_USER", "jagadeesvarrao@gmail.com") 
+EMAIL_PASS = os.getenv("EMAIL_PASS", "rqtu rijm qchy onbv") 
 
 SMTP_SERVER = "smtp.gmail.com"
 SMTP_PORT = 465

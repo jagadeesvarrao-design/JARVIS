@@ -1,7 +1,12 @@
 import time
 import os
 import tempfile
+import re
+import threading
+import socket
 import speech_recognition as sr
+
+TELUGU_SCRIPT_RE = re.compile(r'[\u0C00-\u0C7F]')
 
 class SpeechRecognizer:
     def __init__(self):
@@ -27,7 +32,11 @@ class SpeechRecognizer:
         self.speaker_threshold = getattr(config, "SPEAKER_THRESHOLD", 0.25)
         
         if self.speaker_verification_enabled:
-            self._load_speaker_verification_model()
+            threading.Thread(
+                target=self._load_speaker_verification_model,
+                daemon=True,
+                name="SpeakerVerificationLoader"
+            ).start()
 
         # --- DEEP FIX SETTINGS ---
         self.recognizer.energy_threshold = 300  # Default floor
@@ -145,9 +154,6 @@ class SpeechRecognizer:
                 else:
                     print(f"👂 Processing audio...")
                 # Run parallel English and Telugu speech recognition
-                import threading
-                import socket
-                import re
                 
                 en_result = []
                 te_result = []
@@ -212,7 +218,7 @@ class SpeechRecognizer:
                     return en_text.lower()
                 
                 # Check if Telugu transcription contains Telugu characters
-                if te_text and re.search(r'[\u0C00-\u0C7F]', te_text):
+                if te_text and TELUGU_SCRIPT_RE.search(te_text):
                     return te_text
                 
                 if en_text:
