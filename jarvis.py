@@ -958,33 +958,45 @@ Return ONLY a valid JSON object matching this schema:
             "english": "en-IN-PrabhatNeural"
         }
         
-        # Check for explicit language commands: "speak in <lang>", "talk in <lang>", "talk to me in <lang>"
-        lang_match = re.search(r'\b(?:talk|speak)\s+in\s+([a-z]+)\b', text)
-        if lang_match:
-            lang = lang_match.group(1)
-            if lang in voice_mappings:
-                target_voice = voice_mappings[lang]
-                if lang == "english":
-                    self.active_voice = None  # Reset to default
-                    self._respond("Sure Sir, switching back to default English voice.", voice="en-IN-PrabhatNeural")
-                else:
-                    self.active_voice = target_voice
-                    # Respond with language-specific confirmation/greeting
-                    greetings = {
-                        "telugu": "తప్పకుండా సర్, ఇకపై నేను తెలుగులో మాట్లాడతాను.",
-                        "hindi": "जी सर, अब से मैं हिंदी में बात करूँगा।",
-                        "bengali": "হ্যাঁ স্যার, এখন থেকে আমি বাংলায় কথা বলব।",
-                        "bangla": "হ্যাঁ স্যার, এখন থেকে আমি বাংলায় কথা বলব।",
-                        "tamil": "சரி சார், இனி நான் தமிழில் பேசுவேன்.",
-                        "kannada": "ಖಂಡಿತ ಸರ್, ಇನ್ನು ಮುಂದೆ ನಾನು ಕನ್ನಡದಲ್ಲಿ ಮಾತನಾಡುತ್ತೇನೆ.",
-                        "malayalam": "ശരി സർ, ഇനി ഞാൻ മലയാളത്തിൽ സംസാരിക്കാം.",
-                        "marathi": "नक्कीच सर, आतापासून मी मराठीत बोलेन.",
-                        "gujarati": "ચોક્કસ સર, હવેથી હું ગુજરાતીમાં વાત કરીશ.",
-                        "urdu": "جی سر، اب سے میں اردو میں بات کروں گا۔"
-                    }
-                    greeting = greetings.get(lang, f"Sure Sir, I will now speak in {lang.capitalize()}.")
-                    self._respond(greeting, voice=target_voice)
-                return False
+        # Check for explicit language commands:
+        # e.g., "speak in english", "talk in telugu", "switch to hindi", "change language to tamil", "speak english", "in telugu"
+        lang_detected = None
+        for lang in voice_mappings:
+            if lang in text:
+                # Check for triggers around the language name
+                patterns = [
+                    rf"\b(?:talk|speak|switch|change|convert|translate|use)\s+(?:to\s+|in\s+|language\s+to\s+|only\s+in\s+)?{lang}\b",
+                    rf"\b{lang}\s+(?:voice|language)\b",
+                    rf"\b(?:in|to)\s+{lang}\b"
+                ]
+                if any(re.search(pat, text) for pat in patterns) or text.strip() == lang:
+                    lang_detected = lang
+                    break
+
+        if lang_detected:
+            target_voice = voice_mappings[lang_detected]
+            if lang_detected == "english":
+                self.active_voice = None  # Reset to default
+                self.temp_voice_override = None  # Clear any translation override
+                self._respond("Sure Sir, switching back to default English voice.", voice="en-IN-PrabhatNeural")
+            else:
+                self.active_voice = target_voice
+                self.temp_voice_override = None  # Clear override so that greeting does not undergo double translation
+                greetings = {
+                    "telugu": "తప్పకుండా సర్, ఇకపై నేను తెలుగులో మాట్లాడతాను.",
+                    "hindi": "जी सर, अब से मैं हिंदी में बात करूँगा।",
+                    "bengali": "হ্যাঁ স্যার, এখন থেকে আমি বাংলায় কথা বলব।",
+                    "bangla": "হ্যাঁ স্যার, এখন থেকে আমি বাংলায় কথা বলব।",
+                    "tamil": "சரி சார், இனி நான் தமிழில் பேசுவேன்.",
+                    "kannada": "ಖಂಡಿತ ಸರ್, ಇನ್ನು ಮುಂದೆ ನಾನು ಕನ್ನಡದಲ್ಲಿ ಮಾತನಾಡುತ್ತೇನೆ.",
+                    "malayalam": "ശരി സർ, ഇനി ഞാൻ മലയാളത്തിൽ സംസാരിക്കാം.",
+                    "marathi": "नक्कीच सर, आतापासून मी मराठीत बोलेन.",
+                    "gujarati": "ચોક્કસ સર, હવેથી હું ગુજરાતીમાં વાત કરીશ.",
+                    "urdu": "جی سر، اب سے میں اردو میں بات کروں گا۔"
+                }
+                greeting = greetings.get(lang_detected, f"Sure Sir, I will now speak in {lang_detected.capitalize()}.")
+                self._respond(greeting, voice=target_voice)
+            return False
         
         # 1. Handle Exit (Hard override)
         if "exit" in text or "quit" in text:
