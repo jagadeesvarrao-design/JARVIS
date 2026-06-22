@@ -390,17 +390,15 @@ class JARVIS:
             print(f"❌ [SYSTEM]: Failed to launch Ollama: {e}")
     def _respond(self, text, voice=None):
         if text:
-            # Determine voice to use
+            # Determine voice to use: active_voice takes precedence if explicitly set by command
             voice_to_use = voice
             if not voice_to_use:
-                voice_to_use = getattr(self, "temp_voice_override", None)
-            if not voice_to_use:
                 voice_to_use = getattr(self, "active_voice", None)
+            if not voice_to_use:
+                voice_to_use = getattr(self, "temp_voice_override", None)
             
             # If we are using Telugu but response is in English, translate to Telugu script
-            is_telugu = (voice_to_use == "te-IN-MohanNeural" or 
-                         getattr(self, "temp_voice_override", None) == "te-IN-MohanNeural" or 
-                         getattr(self, "active_voice", None) == "te-IN-MohanNeural")
+            is_telugu = (voice_to_use == "te-IN-MohanNeural")
             if is_telugu and not TELUGU_SCRIPT_RE.search(text):
                 print(f"🤖 JARVIS (English response): {text}")
                 text = self.translate_to_telugu(text)
@@ -975,15 +973,20 @@ Return ONLY a valid JSON object matching this schema:
         }
         
         # Check for explicit language commands:
-        # e.g., "speak in english", "talk in telugu", "switch to hindi", "change language to tamil", "speak english", "in telugu"
+        # e.g., "speak in english", "talk in telugu", "switch to hindi", "change language to tamil", "speak english"
         lang_detected = None
         for lang in voice_mappings:
             if lang in text:
-                # Check for triggers around the language name
+                # Highly robust pattern matching for language switching commands
                 patterns = [
-                    rf"\b(?:talk|speak|switch|change|convert|translate|use)\s+(?:to\s+|in\s+|language\s+to\s+|only\s+in\s+)?{lang}\b",
-                    rf"\b{lang}\s+(?:voice|language)\b",
-                    rf"\b(?:in|to)\s+{lang}\b"
+                    # e.g., "speak ... english", "talk ... telugu", "switch ... hindi", "use ... tamil"
+                    rf"\b(?:talk|speak|switch|change|convert|use)\b.*\b{lang}\b",
+                    # e.g., "english ... voice", "telugu ... language"
+                    rf"\b{lang}\b.*\b(?:voice|language)\b",
+                    # e.g., "voice ... english", "language ... telugu"
+                    rf"\b(?:voice|language)\b.*\b{lang}\b",
+                    # e.g., "in english", "to telugu" (as a standalone command)
+                    rf"^\s*(?:in|to|into)\s+{lang}\s*$"
                 ]
                 if any(re.search(pat, text) for pat in patterns) or text.strip() == lang:
                     lang_detected = lang
