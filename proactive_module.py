@@ -23,7 +23,8 @@ class ProactiveAgent:
         self.current_key_index = 0
         self.error_start_time = None
         self.last_analyzed_error = None
-        self.last_cpu_warning_time = 0
+        # Cooldown warning for the first 10 minutes of startup to let the system stabilize
+        self.last_cpu_warning_time = time.time()
         
         # Initialize psutil CPU reference point to prevent blocking calls later
         psutil.cpu_percent(interval=None)

@@ -122,15 +122,16 @@ def voice_worker():
                         loop.run_until_complete(asyncio.wait_for(run_tts(), timeout=10.0))
                         success = True
                     except Exception as e:
-                        import traceback
-                        print(f"⚠️ Edge TTS failed: {e}. Falling back to pyttsx3.")
-                        traceback.print_exc()
                         success = False
-                        # Network or resolution errors disable Edge TTS for this session
                         err_str = str(e).lower()
-                        if "connection" in err_str or "getaddrinfo" in err_str or "timeout" in err_str or "unreachable" in err_str:
-                            print("🌐 [SPEECH SYSTEM]: Network issues detected. Disabling Edge TTS for this session to prevent lagging.")
+                        is_network_issue = any(phrase in err_str for phrase in ["connection", "getaddrinfo", "timeout", "unreachable"])
+                        if is_network_issue:
+                            print(f"🌐 [SPEECH SYSTEM]: Network issues detected ({e}). Disabling Edge TTS for this session to prevent lagging and falling back to pyttsx3.")
                             use_edge_tts = False
+                        else:
+                            import traceback
+                            print(f"⚠️ Edge TTS failed: {e}. Falling back to pyttsx3.")
+                            traceback.print_exc()
                         
                     if success and os.path.exists(temp_file):
                         try:
