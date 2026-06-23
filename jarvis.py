@@ -354,40 +354,54 @@ class JARVIS:
         url_tags = config.OLLAMA_URL.replace("/api/generate", "/api/tags")
         print("🧠 [SYSTEM]: Checking Ollama status in background...")
         try:
-            resp = requests.get(url_tags, timeout=3.0)
+            resp = requests.get(url_tags, timeout=5.0)
             if resp.status_code == 200:
                 print("🧠 [SYSTEM]: Ollama is online and connected.")
                 return
         except Exception:
             pass
 
-        print("🚀 [SYSTEM]: Local Ollama server is offline. Starting in background...")
-        import subprocess
-        try:
-            ollama_bin = "ollama"
-            default_path = os.path.join(os.environ.get("LOCALAPPDATA", ""), r"Programs\Ollama\ollama.exe")
-            if os.path.exists(default_path):
-                ollama_bin = default_path
-            subprocess.Popen(
-                [ollama_bin, "serve"],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
-            )
-            
-            # Poll port for up to 10 seconds
-            for _ in range(10):
-                try:
-                    resp = requests.get(url_tags, timeout=1.0)
-                    if resp.status_code == 200:
-                        print("🚀 [SYSTEM]: Local Ollama server started successfully and connected.")
-                        return
-                except Exception:
-                    pass
-                time.sleep(1.0)
-            print("⚠️ [SYSTEM]: Ollama server did not respond within 10 seconds.")
-        except Exception as e:
-            print(f"❌ [SYSTEM]: Failed to launch Ollama: {e}")
+        # Check if Ollama process is already running on the OS
+        ollama_running = False
+        for proc in psutil.process_iter(['name']):
+            try:
+                if proc.info['name'] and 'ollama' in proc.info['name'].lower():
+                    ollama_running = True
+                    break
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                pass
+
+        if ollama_running:
+            print("🚀 [SYSTEM]: Ollama process is already running but not responding yet. Waiting for it to initialize...")
+        else:
+            print("🚀 [SYSTEM]: Local Ollama server is offline. Starting in background...")
+            import subprocess
+            try:
+                ollama_bin = "ollama"
+                default_path = os.path.join(os.environ.get("LOCALAPPDATA", ""), r"Programs\Ollama\ollama.exe")
+                if os.path.exists(default_path):
+                    ollama_bin = default_path
+                subprocess.Popen(
+                    [ollama_bin, "serve"],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
+                )
+            except Exception as e:
+                print(f"❌ [SYSTEM]: Failed to launch Ollama: {e}")
+                return
+
+        # Poll port for up to 15 seconds with 3.0s timeout
+        for _ in range(15):
+            try:
+                resp = requests.get(url_tags, timeout=3.0)
+                if resp.status_code == 200:
+                    print("🚀 [SYSTEM]: Local Ollama server started successfully and connected.")
+                    return
+            except Exception:
+                pass
+            time.sleep(1.0)
+        print("⚠️ [SYSTEM]: Ollama server did not respond within 15 seconds.")
     def _respond(self, text, voice=None):
         if text:
             # Determine voice to use: active_voice takes precedence if explicitly set by command

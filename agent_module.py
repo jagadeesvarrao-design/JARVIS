@@ -120,7 +120,7 @@ class RotatingModel:
         url_tags = config.OLLAMA_URL.replace("/api/generate", "/api/tags")
         resolved_model = model_name if model_name else config.OLLAMA_MODEL
         try:
-            tags_resp = requests.get(url_tags, timeout=3.0)
+            tags_resp = requests.get(url_tags, timeout=5.0)
             if tags_resp.status_code == 200:
                 available_models = [m["name"] for m in tags_resp.json().get("models", [])]
                 if available_models:
@@ -138,33 +138,51 @@ class RotatingModel:
             else:
                 return MockResponse("My local neural engine (Ollama) is offline or not responding, Sir.")
         except requests.RequestException:
-            print("🚀 agent_module: Local Ollama server is offline. Attempting to start it...")
-            import subprocess
-            try:
-                ollama_bin = "ollama"
-                default_path = os.path.join(os.environ.get("LOCALAPPDATA", ""), r"Programs\Ollama\ollama.exe")
-                if os.path.exists(default_path):
-                    ollama_bin = default_path
-                subprocess.Popen(
-                    [ollama_bin, "serve"],
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                    creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
-                )
+            # Check if an Ollama process is already running on the OS
+            import psutil
+            ollama_running = False
+            for proc in psutil.process_iter(['name']):
+                try:
+                    if proc.info['name'] and 'ollama' in proc.info['name'].lower():
+                        ollama_running = True
+                        break
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    pass
+
+            if ollama_running:
+                print("🚀 agent_module: Ollama process is already running but not responding yet. Waiting for it to initialize...")
+            else:
+                print("🚀 agent_module: Local Ollama server is offline. Attempting to start it in background...")
+                import subprocess
+                try:
+                    ollama_bin = "ollama"
+                    default_path = os.path.join(os.environ.get("LOCALAPPDATA", ""), r"Programs\Ollama\ollama.exe")
+                    if os.path.exists(default_path):
+                        ollama_bin = default_path
+                    subprocess.Popen(
+                        [ollama_bin, "serve"],
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                        creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
+                    )
+                except Exception as launch_err:
+                    print(f"❌ agent_module: Failed to launch Ollama: {launch_err}")
+                    return MockResponse("Sir, my cloud connection is down and the local Ollama server is not running.")
+
+            # Poll port for up to 15 seconds with 3.0s timeout
+            server_started = False
+            for _ in range(15):
+                try:
+                    tags_resp = requests.get(url_tags, timeout=3.0)
+                    if tags_resp.status_code == 200:
+                        server_started = True
+                        break
+                except Exception:
+                    pass
+                time.sleep(1.0)
                 
-                # Poll port for up to 10 seconds
-                server_started = False
-                for _ in range(10):
-                    try:
-                        tags_resp = requests.get(url_tags, timeout=1.0)
-                        if tags_resp.status_code == 200:
-                            server_started = True
-                            break
-                    except Exception:
-                        pass
-                    time.sleep(1.0)
-                
-                if server_started:
+            if server_started:
+                try:
                     available_models = [m["name"] for m in tags_resp.json().get("models", [])]
                     if available_models:
                         model_found = False
@@ -178,11 +196,11 @@ class RotatingModel:
                             print(f"⚠️ agent_module: Configured model '{resolved_model}' not found. Using installed model '{resolved_model}'.")
                     else:
                         return MockResponse("Sir, no local models are installed in Ollama. Please run 'ollama pull llama3' in your terminal.")
-                else:
-                    return MockResponse("Sir, my cloud connection is down and the local Ollama server failed to start.")
-            except Exception as launch_err:
-                print(f"❌ agent_module: Failed to launch Ollama: {launch_err}")
-                return MockResponse("Sir, my cloud connection is down and the local Ollama server is not running.")
+                except Exception as parse_err:
+                    print(f"⚠️ agent_module: Failed to parse Ollama models list: {parse_err}")
+                    return MockResponse("Sir, my local neural engine is online but returned an invalid models list.")
+            else:
+                return MockResponse("Sir, my cloud connection is down and the local Ollama server failed to start.")
         except Exception as te:
             print(f"⚠️ agent_module: Ollama model list check failed: {te}")
             pass
