@@ -1,6 +1,10 @@
 import sys
 import os
 os.environ["CUDA_VISIBLE_DEVICES"] = ""
+os.environ["QT_LOGGING_RULES"] = "*.warning=false"
+
+import warnings
+warnings.filterwarnings("ignore", category=UserWarning, module="pywinauto")
 
 try:
     sys.stdout.reconfigure(encoding='utf-8')
@@ -525,8 +529,28 @@ class JARVIS:
                     en_text = en_result[0] if en_result else ""
                     te_text = te_result[0] if te_result else ""
                     
+                    # Define core English grammatical words to identify English speech
+                    ENGLISH_CORE_WORDS = {
+                        "the", "a", "an", "and", "or", "but", "if", "then", "of", "to", "in", "on", "at", 
+                        "by", "for", "with", "about", "from", "into", "through", "during", "before", "after",
+                        "i", "me", "my", "myself", "we", "us", "our", "ours", "you", "your", "yours", 
+                        "he", "him", "his", "she", "her", "hers", "it", "its", "they", "them", "their", "theirs",
+                        "is", "am", "are", "was", "were", "be", "been", "being", "have", "has", "had", 
+                        "do", "does", "did", "done", "will", "would", "shall", "should", "can", "could", "may", "might", "must",
+                        "what", "which", "who", "whom", "whose", "this", "that", "these", "those",
+                        "there", "here", "when", "where", "why", "how", "all", "any", "both", "each", "few", 
+                        "more", "most", "other", "some", "such", "no", "nor", "not", "only", "own", "same", 
+                        "so", "than", "too", "very", "just", "hello", "jarvis", "please", "speak", "english"
+                    }
+                    
+                    en_words = set(en_text.lower().split()) if en_text else set()
+                    is_english_command = bool(en_words & ENGLISH_CORE_WORDS)
+                    
+                    # If we detected English core words, assume it is English speech
+                    if en_text and is_english_command:
+                        self.input_queue.put(en_text.lower())
                     # Check if Telugu transcription contains Telugu characters
-                    if te_text and re.search(r'[\u0C00-\u0C7F]', te_text):
+                    elif te_text and re.search(r'[\u0C00-\u0C7F]', te_text):
                         self.input_queue.put(te_text)
                     elif en_text:
                         self.input_queue.put(en_text.lower())
