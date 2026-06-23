@@ -19,12 +19,16 @@ _fallbacks = []
 for _k in _fallbacks:
     if _k not in API_KEYS_POOL:
         API_KEYS_POOL.append(_k)
-# Preferred models for 2026. Non-flash models or legacy 2.0-flash (restricted quota) are omitted/placed last.
+# Preferred models for 2026. Prioritizing lightweight, token-efficient models (Gemini 2.5/2.0 Flash family).
 AI_MODELS = [
     "gemini-2.5-flash-lite",
     "gemini-2.5-flash",
-    "gemini-2.5-pro"
+    "gemini-2.0-flash"
 ]
+
+# Shared dictionary to track API key cooldowns (key: timestamp until cooled down)
+KEY_COOLDOWNS = {}
+
 
 # ==================== IDENTITY ====================
 AI_NAME = "Jarvis"

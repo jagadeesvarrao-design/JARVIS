@@ -1,9 +1,15 @@
+import sys
+try:
+    sys.stdout.reconfigure(encoding='utf-8')
+    sys.stderr.reconfigure(encoding='utf-8')
+except AttributeError:
+    pass
 import config
 import identity
 import os
 import re
 import time
-import requests # NEW: Required for Ollama API calls
+import requests 
 
 class AIBrain:
     def __init__(self):
@@ -11,6 +17,7 @@ class AIBrain:
         self.client = None
         self.api_keys = config.API_KEYS_POOL
         self.current_key_index = 0
+        self.chatgpt_cooldown_until = 0.0
         
         # --- RPM TRACKER ---
         self.request_count = 0 
@@ -19,9 +26,28 @@ class AIBrain:
         try:
             self.models = config.AI_MODELS
         except AttributeError:
-            self.models = ["gemini-2.5-flash-lite", "gemini-2.5-flash", "gemini-2.5-pro"]
+            self.models = ["gemini-2.5-flash-lite", "gemini-2.5-flash", "gemini-2.0-flash"]
             
         self.current_model_index = 0
+
+    def _get_available_key_index(self):
+        """Finds the first key that is not currently in cooldown."""
+        now = time.time()
+        for idx in range(len(self.api_keys)):
+            check_idx = (self.current_key_index + idx) % len(self.api_keys)
+            key = self.api_keys[check_idx]
+            cooldown_time = config.KEY_COOLDOWNS.get(key, 0.0)
+            if now >= cooldown_time:
+                return check_idx
+        # If all keys are in cooldown, pick the one with the earliest expiry
+        earliest_idx = self.current_key_index
+        earliest_time = float('inf')
+        for idx, key in enumerate(self.api_keys):
+            cooldown_time = config.KEY_COOLDOWNS.get(key, 0.0)
+            if cooldown_time < earliest_time:
+                earliest_time = cooldown_time
+                earliest_idx = idx
+        return earliest_idx
 
     def _connect_client(self):
         """Connects the client and resets the counter for the new key"""
@@ -31,6 +57,7 @@ class AIBrain:
                 self.client = None
                 print("❌ Connection Error: No active keys in the pool.")
                 return
+            self.current_key_index = self._get_available_key_index()
             current_key = self.api_keys[self.current_key_index]
             self.client = genai.Client(api_key=current_key)
             self.request_count = 0
@@ -50,12 +77,15 @@ class AIBrain:
     # NEW: CHATGPT FALLBACK ENGINE
     # =================================================================
     def _get_chatgpt_fallback(self, user_text, context, system_rules):
-        import requests
         api_key = getattr(config, "OPENAI_API_KEY", None)
         model = getattr(config, "GPT_MODEL", "gpt-4o-mini")
         
         if not api_key:
-            print("⚠️ [AIBRAIN]: No OpenAI API Key found. Skipping ChatGPT fallback.")
+            return None
+            
+        now = time.time()
+        if now < self.chatgpt_cooldown_until:
+            print("⚠️ [AIBRAIN]: ChatGPT fallback is currently on cooldown. Skipping.")
             return None
             
         print(f"🚀 [AIBRAIN]: Attempting ChatGPT fallback using model '{model}'...")
@@ -83,6 +113,9 @@ class AIBrain:
                 return answer
             else:
                 print(f"⚠️ [AIBRAIN]: ChatGPT API returned code {response.status_code}: {response.text}")
+                if response.status_code in [401, 403, 429] or "insufficient_quota" in response.text:
+                    print("⚠️ [AIBRAIN]: ChatGPT API has quota or auth issues. Putting ChatGPT fallback on 1-hour cooldown.")
+                    self.chatgpt_cooldown_until = time.time() + 3600.0
                 return None
         except Exception as e:
             print(f"⚠️ [AIBRAIN]: ChatGPT fallback connection failed: {e}")
@@ -242,6 +275,46 @@ class AIBrain:
                 answer = self._compress_response(user_text, answer, 6, current_model, system_rules)
         return answer
 
+    def _call_gemini_api(self, model, system_rules, full_prompt, image_path=None):
+        """Calls the Gemini API with transient error retries (503, 504) using exponential backoff."""
+        from google.genai import types
+        import random
+        
+        base_delay = 0.5
+        max_transient_attempts = 3
+        
+        for transient_attempt in range(max_transient_attempts):
+            try:
+                self.request_count += 1
+                if image_path:
+                    import PIL.Image as PIL_Image
+                    img = PIL_Image.open(image_path)
+                    response = self.client.models.generate_content(
+                        model=model,
+                        contents=[img, "Describe this image."],
+                        config=types.GenerateContentConfig(system_instruction=system_rules)
+                    )
+                    img.close()
+                else:
+                    response = self.client.models.generate_content(
+                        model=model,
+                        contents=full_prompt,
+                        config=types.GenerateContentConfig(system_instruction=system_rules)
+                    )
+                return response
+            except Exception as e:
+                err_str = str(e).lower()
+                is_transient = any(x in err_str for x in ["503", "unavailable", "overloaded", "504", "timeout", "deadline exceeded"])
+                
+                # If it's a transient error, wait and retry on the same key
+                if is_transient and transient_attempt < max_transient_attempts - 1:
+                    sleep_time = (2 ** transient_attempt) * base_delay + random.uniform(0.05, 0.15)
+                    print(f"⚠️ Gemini API returned transient error (503/504). Retrying in {sleep_time:.2f}s... (Attempt {transient_attempt + 1}/{max_transient_attempts})")
+                    time.sleep(sleep_time)
+                    continue
+                
+                raise e
+
     # =================================================================
     # PRIMARY ROUTING LOGIC
     # =================================================================
@@ -252,11 +325,7 @@ class AIBrain:
         if hasattr(config, "CONVERSATION_PROVIDER") and config.CONVERSATION_PROVIDER == "ollama":
             use_ollama = True
             
-        # Lazy client initialization on first active API query
-        if not use_ollama and self.client is None and self.api_keys:
-            self._connect_client()
-            
-        if use_ollama or not self.client or not self.api_keys: 
+        if use_ollama or not self.api_keys: 
             # If completely failed to connect to Gemini at boot, try ChatGPT first before Ollama
             if not use_ollama:
                 gpt_ans = self._get_chatgpt_fallback(user_text, context, system_rules)
@@ -265,164 +334,184 @@ class AIBrain:
             raw_answer = self._get_ollama_fallback(user_text, context)
             return self._enforce_line_limits(user_text, raw_answer)
 
-        if self.request_count >= self.RPM_THRESHOLD:
-            print(f"🔄 Key #{self.current_key_index + 1} reached 18 RPM safety limit. Rotating...")
-            self._rotate_key()
-
-        max_retries = len(self.api_keys) * 2
-        attempt = 0
-
-        while attempt < max_retries:
-            current_model = self.models[self.current_model_index]
+        # 1. Retrieve Memory & Self-Awareness
+        try:
+            from memory_moduler import MemorySystem 
+            mem = MemorySystem()
+            user_facts = mem.recall_facts() or "No facts."
+            custom_rules = mem.recall_rules()
+            user_prefs = mem.recall_preferences()
+            user_profile = mem.get_user_profile()
+        except:
+            user_facts = "Unavailable"
+            custom_rules = []
+            user_prefs = {}
+            user_profile = {}
             
-            try:
-                # 1. Retrieve Memory & Self-Awareness
-                if attempt == 0:
-                    try:
-                        from memory_moduler import MemorySystem 
-                        mem = MemorySystem()
-                        user_facts = mem.recall_facts() or "No facts."
-                        custom_rules = mem.recall_rules()
-                        user_prefs = mem.recall_preferences()
-                        user_profile = mem.get_user_profile()
-                    except:
-                        user_facts = "Unavailable"
-                        custom_rules = []
-                        user_prefs = {}
-                        user_profile = {}
-                        
-                    try:
-                        self_awareness = identity.get_self_awareness_context()
-                    except:
-                        self_awareness = ""
-                
-                # 2. Answering length and complexity rules
-                style = user_profile.get("conversational_style", "conversational")
-                interaction = user_profile.get("interaction_type", "text")
-                frequent_topics = user_profile.get("frequent_topics", {})
-                top_topics = sorted(frequent_topics.items(), key=lambda x: x[1], reverse=True)
-                fav_topic = top_topics[0][0] if top_topics else "general_info"
+        try:
+            self_awareness = identity.get_self_awareness_context()
+        except:
+            self_awareness = ""
+        
+        # 2. Answering length and complexity rules
+        style = user_profile.get("conversational_style", "conversational")
+        frequent_topics = user_profile.get("frequent_topics", {})
+        top_topics = sorted(frequent_topics.items(), key=lambda x: x[1], reverse=True)
+        fav_topic = top_topics[0][0] if top_topics else "general_info"
 
-                complexity_rules = (
-                    f"COMPLEXITY & ANSWER LENGTH RULES:\n"
-                    f"   - You MUST dynamically assess the complexity of the Operator's request.\n"
-                    f"   - For simple topics (e.g. general knowledge facts, country details, basic definitions, greeting chit-chat, simple conversions), write a response that spans exactly 3 to 6 lines of text (separate key ideas or sentences onto newlines). Do NOT output a single long line or exceed 6 lines.\n"
-                    f"   - For complex topics (e.g. coding, programming logic, code debugging, complex system design, research requests), your entire response (including all code blocks, markdown tags, and explanations) MUST be strictly less than 12 lines of text (maximum 11 lines total, excluding empty lines). For programming queries, make code blocks extremely compact (e.g., use single-line solutions, ternary operators, avoid empty lines inside code blocks) and limit explanations to at most 1-2 short sentences. NEVER exceed 11 lines of text total.\n"
-                    f"   - Always keep answers brief, clear, and direct. Focus purely on helping the Operator understand the topic clearly and quickly, with absolutely no fluff or filler.\n"
-                    f"   - Dynamically adapt to the Operator's style: '{style}' (e.g., if 'technical', favor code blocks; if 'witty', add dry humor; if 'brief', favor concise answers).\n"
-                    f"   - Tailor explanations considering the Operator's interest in the topic '{fav_topic}'.\n"
-                )
+        complexity_rules = (
+            f"COMPLEXITY & ANSWER LENGTH RULES:\n"
+            f"   - You MUST dynamically assess the complexity of the Operator's request.\n"
+            f"   - For simple topics (e.g. general knowledge facts, country details, basic definitions, greeting chit-chat, simple conversions), write a response that spans exactly 3 to 6 lines of text (separate key ideas or sentences onto newlines). Do NOT output a single long line or exceed 6 lines.\n"
+            f"   - For complex topics (e.g. coding, programming logic, code debugging, complex system design, research requests), your entire response (including all code blocks, markdown tags, and explanations) MUST be strictly less than 12 lines of text (maximum 11 lines total, excluding empty lines). For programming queries, make code blocks extremely compact (e.g., use single-line solutions, ternary operators, avoid empty lines inside code blocks) and limit explanations to at most 1-2 short sentences. NEVER exceed 11 lines of text total.\n"
+            f"   - Always keep answers brief, clear, and direct. Focus purely on helping the Operator understand the topic clearly and quickly, with absolutely no fluff or filler.\n"
+            f"   - Dynamically adapt to the Operator's style: '{style}' (e.g., if 'technical', favor code blocks; if 'witty', add dry humor; if 'brief', favor concise answers).\n"
+            f"   - Tailor explanations considering the Operator's interest in the topic '{fav_topic}'.\n"
+        )
 
-                # 3. System Rules
-                system_rules = (
-                    f"You are {identity.BOT_NAME}, created by {config.OWNER_NAME}.\n"
-                    f"Personality: {identity.PERSONALITY}\n"
-                    f"{complexity_rules}\n"
-                    f"CRITICAL RULES:\n"
-                    f"   - If the operator asks you to greet someone (e.g., 'greet my mother', 'say hello to my father', 'greet them'), you must speak the greeting directly to that person in the first person as JARVIS (using the target language if specified), rather than explaining how the operator should greet them or translating the greeting.\n"
-                    f"   - If the user asks for an image, you MUST end your response with this EXACT tag: [IMAGE: <search_query>]\n"
-                    f"   - If the user asks about a person who is not a well-known historical or public figure, and there is no information about them in the MEMORY block, do not hallucinate or make up details. Instead, politely state that you do not have information about them, or ask the user to tell you more about them so you can remember.\n"
-                )
+        # 3. System Rules
+        system_rules = (
+            f"You are {identity.BOT_NAME}, created by {config.OWNER_NAME}.\n"
+            f"Personality: {identity.PERSONALITY}\n"
+            f"{complexity_rules}\n"
+            f"CRITICAL RULES:\n"
+            f"   - If the operator asks you to greet someone (e.g., 'greet my mother', 'say hello to my father', 'greet them'), you must speak the greeting directly to that person in the first person as JARVIS (using the target language if specified), rather than explaining how the operator should greet them or translating the greeting.\n"
+            f"   - If the user asks for an image, you MUST end your response with this EXACT tag: [IMAGE: <search_query>]\n"
+            f"   - If the user asks about a person who is not a well-known historical or public figure, and there is no information about them in the MEMORY block, do not hallucinate or make up details. Instead, politely state that you do not have information about them, or ask the user to tell you more about them so you can remember.\n"
+        )
+        
+        if self_awareness:
+            system_rules += f"\n{self_awareness}\n"
+            
+        if custom_rules:
+            system_rules += "\nDYNAMIC RULES LEARNED FROM CONVERSATIONS (YOU MUST OBEY THESE):\n"
+            for rule in custom_rules:
+                system_rules += f"   - {rule}\n"
                 
-                if self_awareness:
-                    system_rules += f"\n{self_awareness}\n"
-                    
-                if custom_rules:
-                    system_rules += "\nDYNAMIC RULES LEARNED FROM CONVERSATIONS (YOU MUST OBEY THESE):\n"
-                    for rule in custom_rules:
-                        system_rules += f"   - {rule}\n"
-                        
-                if user_prefs:
-                    system_rules += "\nUSER PREFERENCES LEARNED (YOU MUST ADAPT TO THESE):\n"
-                    for k, v in user_prefs.items():
-                        system_rules += f"   - Preferred {k}: {v}\n"
-                        
-                system_rules += (
-                    f"\nSILENCE: Do NOT read the memory block.\n"
-                    f"MEMORY OF FACTS: [{user_facts}]"
-                )
+        if user_prefs:
+            system_rules += "\nUSER PREFERENCES LEARNED (YOU MUST ADAPT TO THESE):\n"
+            for k, v in user_prefs.items():
+                system_rules += f"   - Preferred {k}: {v}\n"
                 
-                # 3. Request Execution
-                self.request_count += 1
-                
-                if image_path:
-                    import PIL.Image as PIL_Image
-                    from google.genai import types
-                    img = PIL_Image.open(image_path)
-                    response = self.client.models.generate_content(
-                        model=current_model,
-                        contents=[img, "Describe this image."],
-                        config=types.GenerateContentConfig(system_instruction=system_rules)
-                    )
-                    img.close()
-                else:
-                    from google.genai import types
-                    full_prompt = f"Context: {context}\nUSER: {user_text}"
-                    response = self.client.models.generate_content(
-                        model=current_model,
-                        contents=full_prompt,
-                        config=types.GenerateContentConfig(system_instruction=system_rules)
-                    )
-                
-                # 4. Cleaning
-                answer = response.text if response.text else "I'm listening."
-                answer = answer.replace("*", "")
-                if "MEMORY:" in answer: answer = answer.split("MEMORY:")[0]
-                answer = re.sub(r'\[(?!(?i:IMAGE|SIMPLE_IMAGE_REQUEST|Image of)).*?\]', '', answer).strip()
+        system_rules += (
+            f"\nSILENCE: Do NOT read the memory block.\n"
+            f"MEMORY OF FACTS: [{user_facts}]"
+        )
 
-                # 5. Enforce line limits
-                answer = self._enforce_line_limits(user_text, answer, current_model, system_rules)
+        full_prompt = f"Context: {context}\nUSER: {user_text}"
 
-                self.chat_history.append(f"User: {user_text}")
-                self.chat_history.append(f"Jarvis: {answer}")
+        # Combine primary models with fallback list
+        primary_models = self.models
+        fallback_models = ["gemini-2.5-flash-lite", "gemini-2.5-flash", "gemini-2.0-flash", "gemini-2.0-flash-lite"]
+        all_models = primary_models + [m for m in fallback_models if m not in primary_models]
 
-                return answer
+        success = False
+        response = None
+        chosen_model = None
 
-            # --- THE FALLBACK ROUTER ---
-            except Exception as e:
-                error_msg = str(e).lower()
+        now = time.time()
+        
+        for model in all_models:
+            if success:
+                break
                 
-                # 1. 404 Errors (Model Not Found) -> Rotate Model and retry
-                if any(x in error_msg for x in ["404", "not found"]):
-                    self.current_model_index = (self.current_model_index + 1) % len(self.models)
-                    attempt += 1
+            # Iterate keys starting from the current key index
+            keys_to_try = list(self.api_keys)
+            start_idx = self._get_available_key_index()
+            
+            for i in range(len(keys_to_try)):
+                key_idx = (start_idx + i) % len(keys_to_try)
+                key = keys_to_try[key_idx]
+                
+                # Check cooldown
+                if now < config.KEY_COOLDOWNS.get(key, 0.0):
+                    if len(keys_to_try) > 1:
+                        # Skip this key for now
+                        continue
+                
+                # Setup GenAI client
+                self.current_key_index = key_idx
+                try:
+                    from google import genai
+                    self.client = genai.Client(api_key=key)
+                except Exception as conn_err:
+                    print(f"❌ Connection Error for Key #{key_idx + 1}: {conn_err}")
                     continue
                 
-                # 2. Terminal Key Errors (400 Expired, 403 Leaked/Blocked) -> Remove key from pool, rotate, and retry
-                if any(x in error_msg for x in ["400", "invalid_argument", "403", "permission_denied", "expired", "leaked"]):
-                    bad_key = self.api_keys[self.current_key_index]
-                    print(f"❌ Key #{self.current_key_index + 1} is permanently invalid (expired/leaked). Disabling key.")
-                    if bad_key in config.API_KEYS_POOL:
-                        config.API_KEYS_POOL.remove(bad_key)
-                    # Refresh active keys list from pool
-                    self.api_keys = config.API_KEYS_POOL
-                    if self.api_keys:
-                        self.current_key_index = self.current_key_index % len(self.api_keys)
-                    else:
-                        self.client = None
-                    self._connect_client()
-                    attempt += 1
-                    continue
-
-                # 2.5 Network/DNS Connection Errors -> Do not rotate, immediately fallback to local Ollama
-                connection_errors = [
-                    "getaddrinfo", "connecterror", "connection error", "dns error", 
-                    "no connections available", "network unreachable", "socket.timeout", 
-                    "timed out", "connection refused", "failed to establish a new connection",
-                    "cannot connect"
-                ]
-                if any(x in error_msg for x in connection_errors):
-                    print("🌐 [AIBRAIN]: Network connection issue detected. Bypassing cloud API retries.")
+                # Try calling the API
+                try:
+                    # RPM safety check
+                    if self.request_count >= self.RPM_THRESHOLD:
+                        print(f"🔄 Key #{key_idx + 1} reached 18 RPM safety limit. Rotating key...")
+                        config.KEY_COOLDOWNS[key] = time.time() + 5.0
+                        continue
+                        
+                    response = self._call_gemini_api(model, system_rules, full_prompt, image_path)
+                    success = True
+                    chosen_model = model
                     break
+                except Exception as e:
+                    err_str = str(e).lower()
+                    
+                    # Handle 404 (Model Not Found) -> Try next model
+                    if any(x in err_str for x in ["404", "not found"]):
+                        print(f"⚠️ Model '{model}' not found or unsupported for Key #{key_idx + 1}. Trying next model...")
+                        break
+                        
+                    # Handle Terminal Key Errors (400 Expired, 403 Forbidden/Leaked) -> Remove key permanently
+                    if any(x in err_str for x in ["400", "invalid_argument", "403", "permission_denied", "expired", "leaked"]):
+                        print(f"❌ Key #{key_idx + 1} is permanently invalid (expired/leaked). Disabling key.")
+                        if key in self.api_keys:
+                            self.api_keys.remove(key)
+                        if key in config.API_KEYS_POOL:
+                            config.API_KEYS_POOL.remove(key)
+                        continue
+                        
+                    # Handle Network/Connection Errors -> Fallback immediately
+                    connection_errors = [
+                        "getaddrinfo", "connecterror", "connection error", "dns error", 
+                        "no connections available", "network unreachable", "socket.timeout", 
+                        "timed out", "connection refused", "failed to establish a new connection",
+                        "cannot connect"
+                    ]
+                    if any(x in err_str for x in connection_errors):
+                        print("🌐 [AIBRAIN]: Network connection issue detected. Bypassing cloud API.")
+                        success = False
+                        break
+                        
+                    # Handle 429 (Rate Limit / Quota Exceeded)
+                    if any(x in err_str for x in ["429", "resource_exhausted", "quota exceeded"]):
+                        print(f"⚠️ Quota Exceeded (429) on Key #{key_idx + 1}. Putting key on 45s cooldown.")
+                        config.KEY_COOLDOWNS[key] = time.time() + 45.0
+                        continue
+                        
+                    # For all other errors
+                    print(f"⚠️ Error on Key #{key_idx + 1} with Model {model}: {e}. Trying next key...")
+                    continue
+            
+            if success:
+                break
 
-                # 3. Other errors (429 Quota, 503 Overload, 504 Timeout, Connection/Network) -> Rotate Key and Model and retry
-                print(f"⚠️ API Error on Key #{self.current_key_index + 1} ({current_model}): {e}. Rotating key and model...")
-                self._rotate_key()
-                self.current_model_index = (self.current_model_index + 1) % len(self.models)
-                attempt += 1
-                continue
+        if success and response:
+            answer = response.text if response.text else "I'm listening."
+            answer = answer.replace("*", "")
+            if "MEMORY:" in answer: 
+                answer = answer.split("MEMORY:")[0]
+            answer = re.sub(r'\[(?!(?i:IMAGE|SIMPLE_IMAGE_REQUEST|Image of)).*?\]', '', answer).strip()
 
-        # If all keys and retries exhaust, trigger ChatGPT fallback first, and then Ollama
+            # Enforce line limits
+            answer = self._enforce_line_limits(user_text, answer, chosen_model, system_rules)
+
+            self.chat_history.append(f"User: {user_text}")
+            self.chat_history.append(f"Jarvis: {answer}")
+
+            # Keep trace of current model
+            if chosen_model in self.models:
+                self.current_model_index = self.models.index(chosen_model)
+
+            return answer
+
+        # Fallback to ChatGPT then Ollama
         gpt_ans = self._get_chatgpt_fallback(user_text, context, system_rules)
         if gpt_ans:
             return self._enforce_line_limits(user_text, gpt_ans)

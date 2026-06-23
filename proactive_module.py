@@ -49,31 +49,83 @@ class ProactiveAgent:
     def _call_vision_api(self, img, prompt):
         """Calls Gemini directly using config.py and auto-rotates keys/models on errors."""
         from google import genai
-        max_attempts = len(config.API_KEYS_POOL) * len(config.AI_MODELS)
-        attempts = 0
-        model_index = 0
+        import random
         
-        while attempts < max_attempts:
-            try:
-                current_key = config.API_KEYS_POOL[self.current_key_index]
-                current_model = config.AI_MODELS[model_index % len(config.AI_MODELS)]
+        now = time.time()
+        keys_to_try = list(config.API_KEYS_POOL)
+        if not keys_to_try:
+            print("❌ [VISION CRITICAL]: No active keys in the pool.")
+            return None
+            
+        models_to_try = list(config.AI_MODELS)
+        success = False
+        response_text = None
+        
+        for model in models_to_try:
+            if success:
+                break
                 
-                client = genai.Client(api_key=current_key)
-                response = client.models.generate_content(
-                    model=current_model,
-                    contents=[img, prompt]
-                )
-                return response.text.strip()
+            start_idx = self.current_key_index
+            for i in range(len(keys_to_try)):
+                key_idx = (start_idx + i) % len(keys_to_try)
+                key = keys_to_try[key_idx]
                 
-            except Exception as e:
-                print(f"⚠️ [VISION TRY FAILED] Key #{self.current_key_index + 1} with model {config.AI_MODELS[model_index % len(config.AI_MODELS)]}: {e}")
-                # Rotate both key and model to find a working combination
-                self.current_key_index = (self.current_key_index + 1) % len(config.API_KEYS_POOL)
-                model_index += 1
-                attempts += 1
-                time.sleep(0.5)
+                # Check cooldown
+                if now < config.KEY_COOLDOWNS.get(key, 0.0):
+                    if len(keys_to_try) > 1:
+                        continue
+                
+                self.current_key_index = key_idx
+                
+                # Setup Client
+                try:
+                    client = genai.Client(api_key=key)
+                except Exception as conn_err:
+                    print(f"❌ [VISION] Connection Error for Key #{key_idx + 1}: {conn_err}")
+                    continue
+                
+                # Try calling the API with transient retries
+                max_transient_attempts = 3
+                base_delay = 0.5
+                
+                for transient_attempt in range(max_transient_attempts):
+                    try:
+                        response = client.models.generate_content(
+                            model=model,
+                            contents=[img, prompt]
+                        )
+                        response_text = response.text.strip()
+                        success = True
+                        break
+                    except Exception as e:
+                        err_str = str(e).lower()
+                        is_transient = any(x in err_str for x in ["503", "unavailable", "overloaded", "504", "timeout", "deadline exceeded"])
+                        is_rate_limit = any(x in err_str for x in ["429", "resource_exhausted", "quota exceeded"])
+                        
+                        # Handle transient error with backoff
+                        if is_transient and transient_attempt < max_transient_attempts - 1:
+                            sleep_time = (2 ** transient_attempt) * base_delay + random.uniform(0.05, 0.15)
+                            print(f"⚠️ [VISION] Transient error (503/504). Retrying key #{key_idx + 1} in {sleep_time:.2f}s...")
+                            time.sleep(sleep_time)
+                            continue
+                            
+                        # Handle rate limit (429) -> Cool down key and skip to next key
+                        if is_rate_limit:
+                            print(f"⚠️ [VISION] Quota Exceeded (429) on Key #{key_idx + 1}. Putting key on 45s cooldown.")
+                            config.KEY_COOLDOWNS[key] = time.time() + 45.0
+                            break # Break transient loop to rotate key
+                            
+                        # Other non-transient errors -> Rotate key
+                        print(f"⚠️ [VISION] Error on Key #{key_idx + 1} with Model {model}: {e}. Rotating key...")
+                        break # Break transient loop to rotate key
+                
+                if success:
+                    break
                     
-        print("❌ [CRITICAL]: All keys and models exhausted for Vision API.")
+        if success:
+            return response_text
+            
+        print("❌ [VISION CRITICAL]: All keys and models exhausted for Vision API.")
         return None
 
     def morning_briefing(self):

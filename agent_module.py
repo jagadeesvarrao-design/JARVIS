@@ -35,32 +35,76 @@ class RotatingModel:
             return self._call_local_ollama(contents, model_to_use)
 
         import google.generativeai as genai
-        from config import API_KEYS_POOL
+        import random
         
-        # Try primary model first across all keys
-        for i, key in enumerate(API_KEYS_POOL):
-            try:
-                genai.configure(api_key=key)
-                m = genai.GenerativeModel(self.model_name)
-                response = m.generate_content(contents)
-                return response
-            except Exception as e:
-                print(f"⚠️ agent_module: Key #{i+1} failed for '{self.model_name}': {e}. Rotating...")
-                continue
-                
-        # If primary failed, try fallback model across all keys
+        # Clean list of keys
+        api_keys = list(getattr(config, "API_KEYS_POOL", []))
+        if not api_keys:
+            print("⚠️ agent_module: No active keys in the pool.")
+            return self._call_local_ollama(contents)
+            
+        models_to_try = [self.model_name]
         if self.fallback_name and self.fallback_name != self.model_name:
-            print(f"🔄 agent_module: Primary model '{self.model_name}' failed. Trying fallback model '{self.fallback_name}'...")
-            for i, key in enumerate(API_KEYS_POOL):
+            models_to_try.append(self.fallback_name)
+            
+        # Additional fallbacks in case both fail
+        for m in getattr(config, "AI_MODELS", []):
+            if m not in models_to_try:
+                models_to_try.append(m)
+                
+        now = time.time()
+        
+        for model in models_to_try:
+            for i, key in enumerate(api_keys):
+                # Check cooldown
+                if now < config.KEY_COOLDOWNS.get(key, 0.0):
+                    if len(api_keys) > 1:
+                        continue
+                        
+                # Setup GenAI configuration
                 try:
                     genai.configure(api_key=key)
-                    m = genai.GenerativeModel(self.fallback_name)
-                    response = m.generate_content(contents)
-                    return response
-                except Exception as e:
-                    print(f"⚠️ agent_module: Key #{i+1} failed for fallback '{self.fallback_name}': {e}. Rotating...")
+                    m_obj = genai.GenerativeModel(model)
+                except Exception as conn_err:
+                    print(f"❌ agent_module: Configuration failed for Key #{i+1}: {conn_err}")
                     continue
+                    
+                # Call API with transient retries (503, 504)
+                max_transient_attempts = 3
+                base_delay = 0.5
+                success = False
+                response = None
                 
+                for transient_attempt in range(max_transient_attempts):
+                    try:
+                        response = m_obj.generate_content(contents)
+                        success = True
+                        break
+                    except Exception as e:
+                        err_str = str(e).lower()
+                        is_transient = any(x in err_str for x in ["503", "unavailable", "overloaded", "504", "timeout", "deadline exceeded"])
+                        is_rate_limit = any(x in err_str for x in ["429", "resource_exhausted", "quota exceeded"])
+                        
+                        # Handle transient error with backoff
+                        if is_transient and transient_attempt < max_transient_attempts - 1:
+                            sleep_time = (2 ** transient_attempt) * base_delay + random.uniform(0.05, 0.15)
+                            print(f"⚠️ agent_module: Transient error (503/504). Retrying key #{i+1} in {sleep_time:.2f}s...")
+                            time.sleep(sleep_time)
+                            continue
+                            
+                        # Handle rate limit (429) -> Cool down key and skip to next key
+                        if is_rate_limit:
+                            print(f"⚠️ agent_module: Quota Exceeded (429) on Key #{i+1}. Putting key on 45s cooldown.")
+                            config.KEY_COOLDOWNS[key] = time.time() + 45.0
+                            break
+                            
+                        # Other errors -> Rotate key
+                        print(f"⚠️ agent_module: Key #{i+1} failed for '{model}': {e}. Rotating...")
+                        break
+                
+                if success and response:
+                    return response
+                    
         # --- OLLAMA FALLBACK ROUTER ---
         print("⚠️ WARNING: agent_module: Cloud API unreachable. Rerouting to Local Neural Engine (Ollama)...")
         return self._call_local_ollama(contents)
