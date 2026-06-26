@@ -444,9 +444,11 @@ class TestJarvisExtendedAgents(unittest.TestCase):
         self.assertIsNotNone(plan)
         self.assertEqual(plan["tasks"][0]["id"], "task_1")
 
+    @patch('subprocess.Popen')
     @patch('subprocess.run')
     @patch('os.path.exists')
-    def test_project_agent_fallback_on_broken_venv(self, mock_exists, mock_run):
+    @patch('time.sleep')
+    def test_project_agent_fallback_on_broken_venv(self, mock_sleep, mock_exists, mock_run, mock_popen):
         """Test ProjectAgent server launch falling back to primary python when sandbox fails."""
         import agent_module
         pa = agent_module.ProjectAgent()
@@ -455,15 +457,25 @@ class TestJarvisExtendedAgents(unittest.TestCase):
         # mock exists for venv files
         mock_exists.side_effect = lambda path: True if ".venv" in path else False
         
-        # mock run check: 'import flask' or 'from flask import Flask' fails in venv
+        # mock run check: 'from flask import Flask' fails in venv
         mock_val_res = MagicMock()
         mock_val_res.returncode = 1
         mock_run.return_value = mock_val_res
         
+        # mock popen to return a running mock process
+        mock_proc = MagicMock()
+        mock_proc.poll.return_value = None
+        mock_popen.return_value = mock_proc
+        
         # Run environment check & launch setup
         python_to_run = pa.launch_with_autofix()
-        # Verify it returns local flask server URL (or mock URL)
-        self.assertIsNotNone(python_to_run)
+        
+        # Verify it returns local flask server URL
+        self.assertEqual(python_to_run, "http://127.0.0.1:5000")
+        mock_popen.assert_called_once()
+        # Verify it passed sys.executable (primary environment python) to Popen
+        called_args = mock_popen.call_args[0][0]
+        self.assertEqual(called_args[0], sys.executable)
 
 
 class TestJarvisCoreClass(unittest.TestCase):
