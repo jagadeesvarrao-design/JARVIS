@@ -1087,7 +1087,7 @@ class ProjectAgent:
         # Verify if Flask is working in sandbox python, otherwise fallback to primary environment python
         python_to_run = venv_python
         try:
-            val_res = subprocess.run([venv_python, "-c", "import flask"], capture_output=True, text=True)
+            val_res = subprocess.run([venv_python, "-c", "from flask import Flask"], capture_output=True, text=True)
             if val_res.returncode != 0:
                 self._log("system", "Flask not found or broken in sandbox .venv. Falling back to primary environment python.")
                 python_to_run = sys.executable
