@@ -348,5 +348,185 @@ class TestJarvisScripts(unittest.TestCase):
         self.assertTrue(hasattr(check_deps, "is_stdlib"))
 
 
+class TestJarvisExtendedAgents(unittest.TestCase):
+    @patch('pyautogui.screenshot')
+    @patch('PIL.Image.open')
+    @patch('agent_module.model.generate_content')
+    def test_vision_agent(self, mock_gen, mock_img_open, mock_screenshot):
+        """Test VisionAgent taking screenshot and calling model to analyze."""
+        import agent_module
+        va = agent_module.VisionAgent()
+        
+        # Setup mocks
+        mock_screenshot.return_value = MagicMock()
+        mock_resp = MagicMock()
+        mock_resp.text = "Visual analysis output."
+        mock_gen.return_value = mock_resp
+        
+        res = va.analyze_screen("test prompt")
+        self.assertEqual(res, "Visual analysis output.")
+        mock_screenshot.assert_called_once()
+        mock_gen.assert_called_once()
+
+    @patch('requests.get')
+    def test_memory_agent_offline(self, mock_get):
+        """Test MemoryAgent offline fallback behavior when Ollama is offline."""
+        import agent_module
+        mock_get.side_effect = Exception("Connection Refused")
+        
+        ma = agent_module.MemoryAgent()
+        self.assertFalse(ma.working)
+        
+        res_rem = ma.remember("test memory")
+        res_rec = ma.recall("test query")
+        self.assertEqual(res_rem, "Memory Core is offline.")
+        self.assertEqual(res_rec, "No relevant past memories found (Core Offline).")
+
+    @patch('requests.get')
+    @patch('chromadb.PersistentClient')
+    def test_memory_agent_online(self, mock_client, mock_get):
+        """Test MemoryAgent remember and recall workflows when online."""
+        import agent_module
+        
+        # Mock requests.get to return 200 OK (online Ollama)
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {"models": [{"name": "llama3:latest"}]}
+        mock_get.return_value = mock_resp
+        
+        # Mock collection instance and methods
+        mock_collection = MagicMock()
+        mock_collection.query.return_value = {"documents": [["past memory 1", "past memory 2"]]}
+        
+        mock_persistent_client = MagicMock()
+        mock_persistent_client.get_or_create_collection.return_value = mock_collection
+        mock_client.return_value = mock_persistent_client
+        
+        ma = agent_module.MemoryAgent()
+        self.assertTrue(ma.working)
+        
+        res_rem = ma.remember("fact content")
+        res_rec = ma.recall("query content")
+        
+        self.assertEqual(res_rem, "Memory stored.")
+        self.assertIn("past memory 1", res_rec)
+        mock_collection.add.assert_called_once()
+        mock_collection.query.assert_called_once()
+
+    @patch('agent_module.model.generate_content')
+    def test_iterative_project_agent(self, mock_gen):
+        """Test IterativeProjectAgent autonomous coding loop."""
+        import agent_module
+        ipa = agent_module.IterativeProjectAgent()
+        
+        mock_resp = MagicMock()
+        mock_resp.text = "<DONE>"
+        mock_gen.return_value = mock_resp
+        
+        # Run execution loop and check it exits cleanly on first iteration
+        with patch('os.makedirs') as mock_mkdir, patch('os.path.exists') as mock_exists:
+            mock_exists.return_value = True
+            ipa.execute_loop("test_project", "instructions content")
+            
+        mock_gen.assert_called_once()
+
+    @patch('agent_module.model.generate_content')
+    def test_orchestrator_agent(self, mock_gen):
+        """Test OrchestratorAgent planning and query decomposition."""
+        import agent_module
+        oa = agent_module.OrchestratorAgent()
+        
+        mock_resp = MagicMock()
+        mock_resp.text = '{"tasks": [{"id": "task_1", "agent": "memory_agent", "query": "recall test", "depends_on": []}]}'
+        mock_gen.return_value = mock_resp
+        
+        plan = oa.decompose_request("Who am I?")
+        self.assertIsNotNone(plan)
+        self.assertEqual(plan["tasks"][0]["id"], "task_1")
+
+    @patch('subprocess.run')
+    @patch('os.path.exists')
+    def test_project_agent_fallback_on_broken_venv(self, mock_exists, mock_run):
+        """Test ProjectAgent server launch falling back to primary python when sandbox fails."""
+        import agent_module
+        pa = agent_module.ProjectAgent()
+        pa.project_path = "dummy_path"
+        
+        # mock exists for venv files
+        mock_exists.side_effect = lambda path: True if ".venv" in path else False
+        
+        # mock run check: 'import flask' or 'from flask import Flask' fails in venv
+        mock_val_res = MagicMock()
+        mock_val_res.returncode = 1
+        mock_run.return_value = mock_val_res
+        
+        # Run environment check & launch setup
+        python_to_run = pa.launch_with_autofix()
+        # Verify it returns local flask server URL (or mock URL)
+        self.assertIsNotNone(python_to_run)
+
+
+class TestJarvisCoreClass(unittest.TestCase):
+    @patch('jarvis.SpeechRecognizer')
+    @patch('jarvis.ApplicationController')
+    @patch('jarvis.VisionSystem')
+    @patch('jarvis.ContactManager')
+    @patch('jarvis.AIBrain')
+    @patch('jarvis.start_voice_thread')
+    def test_jarvis_initialization(self, mock_voice, mock_brain, mock_cm, mock_vs, mock_ac, mock_sr):
+        """Test JARVIS main class instantiation and sub-system connection."""
+        import jarvis
+        bot = jarvis.JARVIS()
+        self.assertIsNotNone(bot.ears)
+        self.assertIsNotNone(bot.automation)
+        self.assertIsNotNone(bot.vision)
+        self.assertIsNotNone(bot.contacts)
+        self.assertIsNotNone(bot.brain)
+
+    @patch('os.listdir')
+    @patch('importlib.util.spec_from_file_location')
+    def test_jarvis_load_skills(self, mock_spec, mock_listdir):
+        """Test JARVIS dynamic skills loading logic."""
+        import jarvis
+        mock_listdir.return_value = ["dummy_skill.py", "__init__.py"]
+        
+        mock_module = MagicMock()
+        mock_module.get_triggers.return_value = ["dummy trigger"]
+        mock_module.execute.return_value = "executed dummy skill"
+        
+        mock_spec.return_value.loader.exec_module = lambda m: setattr(m, "get_triggers", mock_module.get_triggers) or setattr(m, "execute", mock_module.execute)
+        
+        with patch('jarvis.SpeechRecognizer'), patch('jarvis.ApplicationController'), patch('jarvis.VisionSystem'), patch('jarvis.ContactManager'), patch('jarvis.AIBrain'), patch('jarvis.start_voice_thread'):
+            bot = jarvis.JARVIS()
+            self.assertGreater(len(bot.skills), 0)
+
+
+class TestJarvisGUI(unittest.TestCase):
+    def test_gui_face_widget_states(self):
+        """Test FaceWidget states update internal color values correctly."""
+        import jarvis_gui
+        widget = jarvis_gui.FaceWidget()
+        
+        widget.set_state("idle")
+        self.assertEqual(widget.color.name(), "#f0f0f0")
+        
+        widget.set_state("listening")
+        self.assertEqual(widget.color.name(), "#00ff64")
+        
+        widget.set_state("talking")
+        self.assertEqual(widget.color.name(), "#ff3232")
+        
+        widget.set_state("thinking")
+        self.assertEqual(widget.color.name(), "#b400ff")
+
+
+class TestJarvisDashboard(unittest.TestCase):
+    def test_dashboard_imports(self):
+        """Test that dashboard Streamlit configuration compiles successfully."""
+        import dashboard
+        self.assertIsNotNone(dashboard.st)
+
+
 if __name__ == "__main__":
     unittest.main()
+
