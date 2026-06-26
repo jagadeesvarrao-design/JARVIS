@@ -18,7 +18,7 @@ PERSONALITY = (
 
 # The Tech Stack (How he works)
 SYSTEM_ARCHITECTURE = [
-    "Brain: Google Gemini 2.5 Family (Neural Network) with rotating key pools, OpenAI fallback, and local Ollama fallback",
+    "Brain: Local Ollama (Primary Neural Engine) with Gemini and OpenAI fallbacks for general conversation, and strict local qwen2.5-coder for coding tasks",
     "Voice: SpeechRecognizer with concurrent English/Telugu listening and online Edge-TTS with regional fallback",
     "Vision: Native GDI screen capture in RAM & OpenCV change sensor",
     "Automation: Windows UI Automation (pywinauto, pyautogui) & ctypes active window sensors",
@@ -39,7 +39,7 @@ def get_introduction():
     """Returns a summarized string of who JARVIS is."""
     intro = (
         f"I am {BOT_NAME}, Sir. An advanced virtual artificial intelligence created by {CREATOR} for you, {USER}. "
-        f"I run on version {VERSION} utilizing a dual-brain hybrid configuration of Google's Gemini neural engine and local Ollama. "
+        f"I run on version {VERSION} utilizing local Ollama as my primary neural engine, with Google's Gemini and OpenAI cloud systems as conversational fallbacks. "
         f"My core modules include native GDI vision tracking, automation controllers, and a dynamically loaded skills plugin system. "
         f"I am online and ready to assist."
     )
@@ -157,10 +157,10 @@ def handle_self_query(text):
             conv_provider = "ollama"
         
         return (
-            f"Sir, I run on a dual-brain hybrid configuration:\n"
-            f"- My cloud brain uses Google's {primary_cloud} as the primary model, with Flash, Pro, and ChatGPT (gpt-4o-mini) fallbacks.\n"
-            f"- My local neural engine uses Ollama with '{local_model}' for general conversation and '{coding_model}' for coding tasks.\n"
-            f"Currently, my default conversation provider is set to '{conv_provider}'."
+            f"Sir, I run on a local-first neural configuration:\n"
+            f"- My primary brain for conversation is local Ollama using '{local_model}', with cloud fallbacks using Google's {primary_cloud} pool and ChatGPT (gpt-4o-mini).\n"
+            f"- Coding tasks strictly use the local '{coding_model}' model via Ollama (no cloud fallbacks allowed for code safety).\n"
+            f"Currently, my conversation provider is set to '{conv_provider}'."
         )
 
     # 3. Capabilities queries
