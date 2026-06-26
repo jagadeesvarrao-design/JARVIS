@@ -298,6 +298,18 @@ class JARVIS:
         self.rec_agent = None
         self.project_agent = None
         self.active_voice = None
+        self.state_callback = None
+        self.master_triggers = [
+            "new tab", "close tab", "switch tab", "refresh", "incognito", "history", "downloads",
+            "zoom", "scroll", "reset zoom",
+            "minimise", "maximise", "close window", "switch window", "lock screen", "show desktop",
+            "select all", "copy", "paste", "save", "undo", "redo", "enter", "delete", "clear text", "remove text",
+            "screenshot", "task manager", "settings", "file explorer", "run dialog", "clipboard", "emoji", "control panel",
+            "magnifier", "narrator", "on-screen keyboard", "brightness", "fullscreen",
+            "recycle bin", "documents folder", "pictures folder", "videos folder",
+            "volume up", "volume down", "mute", "play", "pause", "next track", "previous track",
+            "open notepad", "open calculator", "open paint", "open command prompt", "open cmd"
+        ]
         
         # Interactive Dialog Queues
         self.waiting_for_input = False
@@ -964,6 +976,24 @@ Return ONLY a valid JSON object matching this schema:
         except Exception as e:
             return {"intent": "conversational", "topic": text}
 
+    def _resolve_system_command(self, text):
+        triggers_str = ", ".join(self.master_triggers)
+        prompt = f"""You are a system automation controller.
+Given the user's request: "{text}"
+Map it to the most appropriate system trigger from this list:
+[{triggers_str}]
+
+If there is a direct match or semantic equivalent, return ONLY the exact trigger string (no quotes, no extra text).
+If no trigger is appropriate, return "None".
+"""
+        try:
+            resolved = self.brain.get_response(prompt).strip().lower()
+            if resolved in self.master_triggers:
+                return resolved
+            return None
+        except Exception:
+            return None
+
     def process_command(self, text):
         self.temp_voice_override = None
         try:
@@ -1087,6 +1117,20 @@ Return ONLY a valid JSON object matching this schema:
             except Exception as se:
                 print(f"⚠️ [SKILLS SYSTEM]: Error executing skill: {se}")
             
+        # 1.6 Direct Master Triggers Override (Instant execution, no LLM call needed)
+        if any(trigger in text for trigger in self.master_triggers):
+            self._respond("Executing.")
+            msg = self.automation.perform_action(text)
+            if msg and msg != "Action performed.": 
+                self._respond(msg)
+            return False
+
+        # 1.7 Direct Text Typing Override
+        if (text.startswith("write ") or text.startswith("type ")) and not (text.startswith("types ") or text.startswith("type of ") or text.startswith("types of ")):
+            self._respond("Typing...")
+            self.automation.type_text(text)
+            return False
+
         # 2. Semantic Intent Routing
         intent_data = self._determine_intent(text)
         intent = intent_data.get("intent", "conversational")
@@ -1101,6 +1145,19 @@ Return ONLY a valid JSON object matching this schema:
                 topic = "New_Project"
             self.interactive_website_builder(topic, text)
             return False
+
+        if intent == "system_control":
+            print(f"⚙️ [ROUTER] Routing system command: {text}")
+            resolved_trigger = self._resolve_system_command(text)
+            if resolved_trigger:
+                print(f"⚙️ [ROUTER] Resolved system command to trigger: '{resolved_trigger}'")
+                self._respond("Executing.")
+                msg = self.automation.perform_action(resolved_trigger)
+                if msg and msg != "Action performed.": 
+                    self._respond(msg)
+                return False
+            else:
+                print(f"⚠️ [ROUTER] Could not resolve system command to a trigger. Falling back to conversation.")
         
         # 1. Handle Exit
         if "exit" in text or "quit" in text:
@@ -1949,17 +2006,35 @@ Return ONLY a valid JSON object matching this schema:
         wake_recognizer = sr.Recognizer()
         wake_microphone = None
         
+        try:
+            wake_microphone = sr.Microphone()
+            with wake_microphone as source:
+                print("🎧 Calibrating wake word recognizer...")
+                wake_recognizer.adjust_for_ambient_noise(source, duration=1.0)
+                print("✅ Wake word recognizer calibrated.")
+        except Exception as e:
+            print(f"⚠️ Wake word calibration error: {e}")
+            wake_microphone = None
+        
         while True:
+            if hasattr(self, 'state_callback') and self.state_callback:
+                try:
+                    self.state_callback("idle")
+                except Exception:
+                    pass
             try:
                 if wake_microphone is None:
                     wake_microphone = sr.Microphone()
+                    with wake_microphone as source:
+                        print("🎧 Calibrating wake word recognizer...")
+                        wake_recognizer.adjust_for_ambient_noise(source, duration=1.0)
+                        print("✅ Wake word recognizer calibrated.")
                 
                 try:
                     voice_queue.join()
                 except Exception:
                     pass
                 with wake_microphone as source:
-                    wake_recognizer.adjust_for_ambient_noise(source, duration=0.5)
                     try:
                         audio = wake_recognizer.listen(source, timeout=5, phrase_time_limit=3)
                         text = wake_recognizer.recognize_google(audio).lower()

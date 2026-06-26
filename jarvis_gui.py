@@ -127,10 +127,16 @@ class JarvisThread(QThread):
         self.jarvis._respond = self.gui_respond
         self.jarvis._listen_for_command = self.gui_listen
         self.jarvis.process_command = self.gui_process_wrapper
+        
+        # Connect state callback
+        self.jarvis.state_callback = self.on_state_changed
 
         self.state_signal.emit("idle")
         self.jarvis.run()
         pythoncom.CoUninitialize()
+
+    def on_state_changed(self, state):
+        self.state_signal.emit(state)
 
     def on_speaking_state_changed(self, is_speaking):
         """Callback from voice worker thread when speaking starts or stops"""

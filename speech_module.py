@@ -43,8 +43,8 @@ class SpeechRecognizer:
         self.recognizer.dynamic_energy_threshold = True
         self.recognizer.dynamic_energy_adjustment_damping = 0.15
         self.recognizer.dynamic_energy_ratio = 1.5
-        self.recognizer.pause_threshold = 4.0 # Give user plenty of time to pause and think
-        self.recognizer.non_speaking_duration = 2.5
+        self.recognizer.pause_threshold = 1.2 # snappier response
+        self.recognizer.non_speaking_duration = 0.8
 
     def _load_speaker_verification_model(self):
         try:

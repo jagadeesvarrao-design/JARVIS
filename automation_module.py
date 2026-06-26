@@ -444,6 +444,40 @@ class ApplicationController:
             elif "brightness" in command: pyautogui.press('f3')
             elif "fullscreen" in command: pyautogui.press('f11')
 
+            # --- Media Controls ---
+            elif "volume up" in command: 
+                pyautogui.press("volumeup", presses=5)
+                return "Volume increased."
+            elif "volume down" in command: 
+                pyautogui.press("volumedown", presses=5)
+                return "Volume decreased."
+            elif "mute" in command: 
+                pyautogui.press("volumemute")
+                return "Volume muted/unmuted."
+            elif "play" in command or "pause" in command or "stop" in command: 
+                pyautogui.press("playpause")
+                return "Playback toggled."
+            elif "next" in command: 
+                pyautogui.press("nexttrack")
+                return "Next track playing."
+            elif "previous" in command: 
+                pyautogui.press("prevtrack")
+                return "Previous track playing."
+
+            # --- App Launching ---
+            elif "open notepad" in command or "notepad" in command: 
+                os.system("start notepad")
+                return "Notepad opened."
+            elif "open calculator" in command or "calculator" in command: 
+                os.system("start calc")
+                return "Calculator opened."
+            elif "open paint" in command or "paint" in command: 
+                os.system("start mspaint")
+                return "Paint opened."
+            elif "open command prompt" in command or "open cmd" in command: 
+                os.system("start cmd")
+                return "Command Prompt opened."
+
             # --- Folders ---
             elif "downloads folder" in command: os.startfile(os.path.join(os.environ['USERPROFILE'], 'Downloads'))
             elif "documents folder" in command: os.startfile(os.path.join(os.environ['USERPROFILE'], 'Documents'))

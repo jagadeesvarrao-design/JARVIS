@@ -11,6 +11,26 @@ import re
 import time
 import requests 
 
+def is_multilingual_request(text):
+    if not text:
+        return False
+    # Check for non-ASCII characters of Indian languages (Telugu: \u0C00-\u0C7F, Hindi: \u0900-\u097F)
+    if any(ord(char) > 127 for char in text):
+        if re.search(r'[\u0C00-\u0C7F\u0900-\u097F\u0980-\u09FF\u0A00-\u0A7F\u0B00-\u0B7F\u0B80-\u0BFF\u0C80-\u0CFF\u0D00-\u0D7F]', text):
+            return True
+    
+    # Check for language names in the query
+    non_english_langs = [
+        "telugu", "hindi", "tamil", "kannada", "malayalam", "bengali", "gujarati", 
+        "marathi", "punjabi", "urdu", "sanskrit", "spanish", "french", "german", 
+        "italian", "japanese", "chinese", "russian", "korean", "portuguese"
+    ]
+    words = re.findall(r'\b\w+\b', text.lower())
+    for lang in non_english_langs:
+        if lang in words:
+            return True
+    return False
+
 class AIBrain:
     def __init__(self):
         self.chat_history = []
@@ -124,7 +144,7 @@ class AIBrain:
     # =================================================================
     # NEW: OLLAMA FALLBACK ENGINE
     # =================================================================
-    def _get_ollama_fallback(self, user_text, context, raise_on_error=False):
+    def _get_ollama_fallback(self, user_text, context, raise_on_error=False, model_name=None):
         if raise_on_error:
             print("🧠 [AIBRAIN]: Routing conversation directly to local Ollama...")
         else:
@@ -132,7 +152,8 @@ class AIBrain:
         
         # Self-healing model resolution: check what models are available locally
         url_tags = config.OLLAMA_URL.replace("/api/generate", "/api/tags")
-        resolved_model = config.OLLAMA_MODEL
+        target_model = model_name if model_name else getattr(config, "OLLAMA_MODEL", "llama")
+        resolved_model = target_model
         try:
             tags_resp = requests.get(url_tags, timeout=5.0)
             if tags_resp.status_code == 200:
@@ -146,7 +167,7 @@ class AIBrain:
                             break
                     if not model_found:
                         resolved_model = available_models[0]
-                        print(f"⚠️ Configured model '{config.OLLAMA_MODEL}' not found. Using installed model '{resolved_model}'.")
+                        print(f"⚠️ Configured model '{target_model}' not found. Using installed model '{resolved_model}'.")
                 else:
                     if raise_on_error: raise RuntimeError("No local models are installed in Ollama.")
                     return "Sir, no local models are installed in Ollama. Please run 'ollama pull llama3' in your terminal."
@@ -213,7 +234,7 @@ class AIBrain:
                                 break
                         if not model_found:
                             resolved_model = available_models[0]
-                            print(f"⚠️ Configured model '{config.OLLAMA_MODEL}' not found. Using installed model '{resolved_model}'.")
+                            print(f"⚠️ Configured model '{target_model}' not found. Using installed model '{resolved_model}'.")
                     else:
                         if raise_on_error: raise RuntimeError("No local models are installed in Ollama.")
                         return "Sir, no local models are installed in Ollama. Please run 'ollama pull llama3' in your terminal."
@@ -243,7 +264,7 @@ class AIBrain:
         }
         
         try:
-            response = requests.post(config.OLLAMA_URL, json=payload, timeout=120)
+            response = requests.post(config.OLLAMA_URL, json=payload, timeout=15.0)
             if response.status_code == 200:
                 answer = response.json().get("response", "I could not generate a thought, Sir.")
                 return answer.strip()
@@ -356,26 +377,6 @@ class AIBrain:
     def get_response(self, user_text, image_path=None, context=None):
         system_rules = f"You are {identity.BOT_NAME}, created by {config.OWNER_NAME}.\nPersonality: {identity.PERSONALITY}"
         
-        # Determine primary provider
-        primary_provider = getattr(config, "CONVERSATION_PROVIDER", "gemini").lower()
-        
-        if primary_provider == "ollama":
-            # Attempt local Ollama first, fallback to Gemini pool if it fails/offline
-            try:
-                ans = self._get_ollama_fallback(user_text, context, raise_on_error=True)
-                return self._enforce_line_limits(user_text, ans)
-            except Exception as e:
-                print(f"⚠️ [AIBRAIN]: Ollama conversation provider failed/offline: {e}. Falling back to cloud models.")
-                # Fall through to the rest of the function (Gemini -> ChatGPT -> Ollama fallback)
-        
-        if not self.api_keys:
-            # If completely failed to connect to Gemini at boot, try ChatGPT first before Ollama
-            gpt_ans = self._get_chatgpt_fallback(user_text, context, system_rules)
-            if gpt_ans:
-                return self._enforce_line_limits(user_text, gpt_ans)
-            raw_answer = self._get_ollama_fallback(user_text, context)
-            return self._enforce_line_limits(user_text, raw_answer)
-
         # 1. Retrieve Memory & Self-Awareness
         try:
             from memory_moduler import MemorySystem 
@@ -441,122 +442,119 @@ class AIBrain:
         )
 
         full_prompt = f"Context: {context}\nUSER: {user_text}"
-
-        # Combine primary models with fallback list
-        primary_models = self.models
-        fallback_models = ["gemini-2.5-flash-lite", "gemini-2.5-flash", "gemini-2.0-flash", "gemini-2.0-flash-lite"]
-        all_models = primary_models + [m for m in fallback_models if m not in primary_models]
-
-        success = False
-        response = None
-        chosen_model = None
-
-        now = time.time()
         
-        for model in all_models:
-            if success:
-                break
-                
-            # Iterate keys starting from the current key index
-            keys_to_try = list(self.api_keys)
-            start_idx = self._get_available_key_index()
+        is_multilingual = is_multilingual_request(user_text)
+        
+        def run_gemini():
+            primary_models = self.models
+            fallback_models = ["gemini-3.1-flash", "gemini-2.5-flash", "gemini-3.1-pro", "gemini-3.1-flashlite", "gemini-2.0-flash"]
+            all_models = primary_models + [m for m in fallback_models if m not in primary_models]
+
+            success = False
+            response = None
+            chosen_model = None
+            now = time.time()
             
-            for i in range(len(keys_to_try)):
-                key_idx = (start_idx + i) % len(keys_to_try)
-                key = keys_to_try[key_idx]
-                
-                # Check cooldown
-                if now < config.KEY_COOLDOWNS.get(key, 0.0):
-                    if len(keys_to_try) > 1:
-                        # Skip this key for now
-                        continue
-                
-                # Setup GenAI client
-                self.current_key_index = key_idx
-                try:
-                    from google import genai
-                    self.client = genai.Client(api_key=key)
-                except Exception as conn_err:
-                    print(f"❌ Connection Error for Key #{key_idx + 1}: {conn_err}")
-                    continue
-                
-                # Try calling the API
-                try:
-                    # RPM safety check
-                    if self.request_count >= self.RPM_THRESHOLD:
-                        print(f"🔄 Key #{key_idx + 1} reached 18 RPM safety limit. Rotating key...")
-                        config.KEY_COOLDOWNS[key] = time.time() + 5.0
-                        continue
-                        
-                    response = self._call_gemini_api(model, system_rules, full_prompt, image_path)
-                    success = True
-                    chosen_model = model
+            for model in all_models:
+                if success:
                     break
-                except Exception as e:
-                    err_str = str(e).lower()
-                    
-                    # Handle 404 (Model Not Found) -> Try next model
-                    if any(x in err_str for x in ["404", "not found"]):
-                        print(f"⚠️ Model '{model}' not found or unsupported for Key #{key_idx + 1}. Trying next model...")
-                        break
-                        
-                    # Handle Terminal Key Errors (400 Expired, 403 Forbidden/Leaked) -> Remove key permanently
-                    if any(x in err_str for x in ["400", "invalid_argument", "403", "permission_denied", "expired", "leaked"]):
-                        print(f"❌ Key #{key_idx + 1} is permanently invalid (expired/leaked). Disabling key.")
-                        if key in self.api_keys:
-                            self.api_keys.remove(key)
-                        if key in config.API_KEYS_POOL:
-                            config.API_KEYS_POOL.remove(key)
+                keys_to_try = list(self.api_keys)
+                start_idx = self._get_available_key_index()
+                
+                for i in range(len(keys_to_try)):
+                    key_idx = (start_idx + i) % len(keys_to_try)
+                    key = keys_to_try[key_idx]
+                    if now < config.KEY_COOLDOWNS.get(key, 0.0):
+                        if len(keys_to_try) > 1:
+                            continue
+                    self.current_key_index = key_idx
+                    try:
+                        from google import genai
+                        self.client = genai.Client(api_key=key)
+                    except Exception as conn_err:
+                        print(f"❌ Connection Error for Key #{key_idx + 1}: {conn_err}")
                         continue
-                        
-                    # Handle Network/Connection Errors -> Fallback immediately
-                    connection_errors = [
-                        "getaddrinfo", "connecterror", "connection error", "dns error", 
-                        "no connections available", "network unreachable", "socket.timeout", 
-                        "timed out", "connection refused", "failed to establish a new connection",
-                        "cannot connect"
-                    ]
-                    if any(x in err_str for x in connection_errors):
-                        print("🌐 [AIBRAIN]: Network connection issue detected. Bypassing cloud API.")
-                        success = False
+                    try:
+                        if self.request_count >= self.RPM_THRESHOLD:
+                            print(f"🔄 Key #{key_idx + 1} reached 18 RPM safety limit. Rotating key...")
+                            config.KEY_COOLDOWNS[key] = time.time() + 5.0
+                            continue
+                        response = self._call_gemini_api(model, system_rules, full_prompt, image_path)
+                        success = True
+                        chosen_model = model
                         break
-                        
-                    # Handle 429 (Rate Limit / Quota Exceeded)
-                    if any(x in err_str for x in ["429", "resource_exhausted", "quota exceeded"]):
-                        print(f"⚠️ Quota Exceeded (429) on Key #{key_idx + 1}. Putting key on 45s cooldown.")
-                        config.KEY_COOLDOWNS[key] = time.time() + 45.0
+                    except Exception as e:
+                        err_str = str(e).lower()
+                        if any(x in err_str for x in ["404", "not found"]):
+                            print(f"⚠️ Model '{model}' not found or unsupported for Key #{key_idx + 1}. Trying next model...")
+                            break
+                        if any(x in err_str for x in ["400", "invalid_argument", "403", "permission_denied", "expired", "leaked"]):
+                            print(f"❌ Key #{key_idx + 1} is permanently invalid (expired/leaked). Disabling key.")
+                            if key in self.api_keys:
+                                self.api_keys.remove(key)
+                            if key in config.API_KEYS_POOL:
+                                config.API_KEYS_POOL.remove(key)
+                            continue
+                        connection_errors = [
+                            "getaddrinfo", "connecterror", "connection error", "dns error", 
+                            "no connections available", "network unreachable", "socket.timeout", 
+                            "timed out", "connection refused", "failed to establish a new connection",
+                            "cannot connect"
+                        ]
+                        if any(x in err_str for x in connection_errors):
+                            print("🌐 [AIBRAIN]: Network connection issue detected. Bypassing cloud API.")
+                            success = False
+                            break
+                        if any(x in err_str for x in ["429", "resource_exhausted", "quota exceeded"]):
+                            print(f"⚠️ Quota Exceeded (429) on Key #{key_idx + 1}. Putting key on 45s cooldown.")
+                            config.KEY_COOLDOWNS[key] = time.time() + 45.0
+                            continue
+                        print(f"⚠️ Error on Key #{key_idx + 1} with Model {model}: {e}. Trying next key...")
                         continue
-                        
-                    # For all other errors
-                    print(f"⚠️ Error on Key #{key_idx + 1} with Model {model}: {e}. Trying next key...")
-                    continue
             
-            if success:
-                break
+            if success and response:
+                answer = response.text if response.text else "I'm listening."
+                answer = answer.replace("*", "")
+                if "MEMORY:" in answer: 
+                    answer = answer.split("MEMORY:")[0]
+                answer = re.sub(r'\[(?!(?i:IMAGE|SIMPLE_IMAGE_REQUEST|Image of)).*?\]', '', answer).strip()
+                answer = self._enforce_line_limits(user_text, answer, chosen_model, system_rules)
+                self.chat_history.append(f"User: {user_text}")
+                self.chat_history.append(f"Jarvis: {answer}")
+                if chosen_model in self.models:
+                    self.current_model_index = self.models.index(chosen_model)
+                return answer
+            return None
 
-        if success and response:
-            answer = response.text if response.text else "I'm listening."
-            answer = answer.replace("*", "")
-            if "MEMORY:" in answer: 
-                answer = answer.split("MEMORY:")[0]
-            answer = re.sub(r'\[(?!(?i:IMAGE|SIMPLE_IMAGE_REQUEST|Image of)).*?\]', '', answer).strip()
-
-            # Enforce line limits
-            answer = self._enforce_line_limits(user_text, answer, chosen_model, system_rules)
-
-            self.chat_history.append(f"User: {user_text}")
-            self.chat_history.append(f"Jarvis: {answer}")
-
-            # Keep trace of current model
-            if chosen_model in self.models:
-                self.current_model_index = self.models.index(chosen_model)
-
-            return answer
-
-        # Fallback to ChatGPT then Ollama
-        gpt_ans = self._get_chatgpt_fallback(user_text, context, system_rules)
-        if gpt_ans:
-            return self._enforce_line_limits(user_text, gpt_ans)
-
-        raw_answer = self._get_ollama_fallback(user_text, context)
-        return self._enforce_line_limits(user_text, raw_answer)
+        # Routing Flow
+        if is_multilingual:
+            print("🌐 [AIBRAIN]: Multilingual request detected. Using Gemini models as primary...")
+            if self.api_keys:
+                ans = run_gemini()
+                if ans:
+                    return ans
+            # Fallback to local Gemma on Ollama
+            print("⚠️ [AIBRAIN]: Gemini failed or offline. Falling back to local Gemma...")
+            gemma_model = getattr(config, "OLLAMA_MULTILINGUAL_MODEL", "gemma")
+            ans = self._get_ollama_fallback(user_text, context, raise_on_error=False, model_name=gemma_model)
+            return self._enforce_line_limits(user_text, ans)
+        else:
+            print("🇬🇧 [AIBRAIN]: English request detected. Using local Ollama (llama) as primary...")
+            llama_model = getattr(config, "OLLAMA_ENGLISH_MODEL", "llama")
+            try:
+                ans = self._get_ollama_fallback(user_text, context, raise_on_error=True, model_name=llama_model)
+                return self._enforce_line_limits(user_text, ans)
+            except Exception as e:
+                print(f"⚠️ [AIBRAIN]: Ollama (llama) failed/offline: {e}. Falling back to Gemini...")
+                if self.api_keys:
+                    ans = run_gemini()
+                    if ans:
+                        return ans
+                
+                # If Gemini also fails, fallback to ChatGPT then Ollama default
+                gpt_ans = self._get_chatgpt_fallback(user_text, context, system_rules)
+                if gpt_ans:
+                    return self._enforce_line_limits(user_text, gpt_ans)
+                
+                ans = self._get_ollama_fallback(user_text, context, raise_on_error=False, model_name=llama_model)
+                return self._enforce_line_limits(user_text, ans)

@@ -21,10 +21,12 @@ for _k in _fallbacks:
         API_KEYS_POOL.append(_k)
 # Preferred models for 2026. Prioritizing lightweight, token-efficient models (Gemini 2.5/2.0 Flash family).
 AI_MODELS = [
-    "gemini-2.5-flash-lite",
+    "gemini-3.1-flash",
     "gemini-2.5-flash",
-    "gemini-2.0-flash"
+    "gemini-3.1-pro",
+    "gemini-3.1-flashlite"
 ]
+
 
 # Shared dictionary to track API key cooldowns (key: timestamp until cooled down)
 KEY_COOLDOWNS = {}
@@ -53,7 +55,9 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # ==================== LOCAL AI FALLBACK (OLLAMA) ====================
 # General purpose local fallback model
-OLLAMA_MODEL = "llama3:latest"
+OLLAMA_ENGLISH_MODEL = "llama"
+OLLAMA_MULTILINGUAL_MODEL = "gemma"
+OLLAMA_MODEL = "llama"
 
 # Dedicated local coding model (e.g. qwen2.5-coder:7b, deepseek-coder:6.7b)
 OLLAMA_CODING_MODEL = "qwen2.5-coder:7b"

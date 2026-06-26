@@ -157,7 +157,7 @@ def handle_self_query(text):
             conv_provider = "ollama"
         
         return (
-            f"Sir, I run on a local-first neural configuration:\n"
+            f"Sir, I run on a local-first neur  `al configuration:\n"
             f"- My primary brain for conversation is local Ollama using '{local_model}', with cloud fallbacks using Google's {primary_cloud} pool and ChatGPT (gpt-4o-mini).\n"
             f"- Coding tasks strictly use the local '{coding_model}' model via Ollama (no cloud fallbacks allowed for code safety).\n"
             f"Currently, my conversation provider is set to '{conv_provider}'."
