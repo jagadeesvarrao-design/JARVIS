@@ -539,6 +539,54 @@ class TestJarvisDashboard(unittest.TestCase):
         self.assertIsNotNone(dashboard.st)
 
 
+class TestJarvisFallbackRouting(unittest.TestCase):
+    @patch('ai_module.AIBrain._get_ollama_fallback')
+    @patch('ai_module.AIBrain._call_gemini_api')
+    def test_conversational_ollama_primary_fallback(self, mock_gemini, mock_ollama):
+        """Test conversation uses Ollama first and falls back to Gemini when Ollama fails."""
+        import ai_module
+        import config
+        
+        # Configure conversation provider as ollama
+        config.CONVERSATION_PROVIDER = "ollama"
+        config.API_KEYS_POOL = ["test_key"]
+        
+        brain = ai_module.AIBrain()
+        brain.api_keys = ["test_key"]
+        
+        # Mock Ollama fallback to raise an exception
+        mock_ollama.side_effect = RuntimeError("Ollama Server Offline")
+        
+        # Mock Gemini call
+        mock_resp = MagicMock()
+        mock_resp.text = "Gemini fallback reply."
+        mock_gemini.return_value = mock_resp
+        
+        with patch('google.genai.Client') as mock_client:
+            res = brain.get_response("hello")
+            
+        self.assertEqual(res, "Gemini fallback reply.")
+        mock_ollama.assert_called_once()
+        mock_gemini.assert_called_once()
+
+    @patch('agent_module.RotatingModel._call_local_ollama')
+    def test_coding_ollama_strict(self, mock_ollama):
+        """Test coding tasks strictly use Ollama and never fall back to Gemini."""
+        import agent_module
+        import config
+        
+        # Configure coding provider as ollama
+        config.CODING_PROVIDER = "ollama"
+        
+        model = agent_module.RotatingModel('gemini-2.5-flash')
+        
+        mock_ollama.return_value = agent_module.MockResponse("Ollama code output.")
+        
+        res = model.generate_content("write some python code")
+        self.assertEqual(res.text, "Ollama code output.")
+        mock_ollama.assert_called_once()
+
+
 if __name__ == "__main__":
     unittest.main()
 

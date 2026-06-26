@@ -124,8 +124,11 @@ class AIBrain:
     # =================================================================
     # NEW: OLLAMA FALLBACK ENGINE
     # =================================================================
-    def _get_ollama_fallback(self, user_text, context):
-        print("⚠️ WARNING: Cloud API unreachable. Rerouting to Local Neural Engine (Ollama)...")
+    def _get_ollama_fallback(self, user_text, context, raise_on_error=False):
+        if raise_on_error:
+            print("🧠 [AIBRAIN]: Routing conversation directly to local Ollama...")
+        else:
+            print("⚠️ WARNING: Cloud API unreachable. Rerouting to Local Neural Engine (Ollama)...")
         
         # Self-healing model resolution: check what models are available locally
         url_tags = config.OLLAMA_URL.replace("/api/generate", "/api/tags")
@@ -145,10 +148,15 @@ class AIBrain:
                         resolved_model = available_models[0]
                         print(f"⚠️ Configured model '{config.OLLAMA_MODEL}' not found. Using installed model '{resolved_model}'.")
                 else:
+                    if raise_on_error: raise RuntimeError("No local models are installed in Ollama.")
                     return "Sir, no local models are installed in Ollama. Please run 'ollama pull llama3' in your terminal."
             else:
+                if raise_on_error: raise RuntimeError("My local neural engine (Ollama) is offline or not responding.")
                 return "My local neural engine (Ollama) is offline or not responding, Sir."
-        except requests.RequestException:
+        except requests.RequestException as re_err:
+            if raise_on_error and "connection refused" in str(re_err).lower():
+                raise RuntimeError("Local Ollama server is offline.")
+            
             # Check if an Ollama process is already running on the OS
             import psutil
             ollama_running = False
@@ -178,6 +186,7 @@ class AIBrain:
                     )
                 except Exception as launch_err:
                     print(f"❌ Failed to launch Ollama: {launch_err}")
+                    if raise_on_error: raise RuntimeError(f"Ollama server launch failed: {launch_err}")
                     return "Sir, my cloud connection is down and the local Ollama server is not running."
 
             # Poll port for up to 15 seconds with 3.0s timeout
@@ -206,14 +215,18 @@ class AIBrain:
                             resolved_model = available_models[0]
                             print(f"⚠️ Configured model '{config.OLLAMA_MODEL}' not found. Using installed model '{resolved_model}'.")
                     else:
+                        if raise_on_error: raise RuntimeError("No local models are installed in Ollama.")
                         return "Sir, no local models are installed in Ollama. Please run 'ollama pull llama3' in your terminal."
                 except Exception as parse_err:
                     print(f"⚠️ Failed to parse Ollama models list: {parse_err}")
+                    if raise_on_error: raise RuntimeError("Ollama returned an invalid models list.")
                     return "Sir, my local neural engine is online but returned an invalid models list."
             else:
+                if raise_on_error: raise RuntimeError("Ollama server failed to start.")
                 return "Sir, my cloud connection is down and the local Ollama server failed to start."
         except Exception as te:
             print(f"⚠️ Ollama model list check failed: {te}")
+            if raise_on_error: raise RuntimeError(f"Ollama check failed: {te}")
             pass
 
         full_prompt = (
@@ -235,12 +248,16 @@ class AIBrain:
                 answer = response.json().get("response", "I could not generate a thought, Sir.")
                 return answer.strip()
             elif response.status_code == 404:
+                if raise_on_error: raise RuntimeError(f"Model '{resolved_model}' not found in Ollama.")
                 return f"Sir, the model '{resolved_model}' was not found in Ollama. Please download it using 'ollama pull {resolved_model}'."
             else:
+                if raise_on_error: raise RuntimeError(f"Ollama returned error status {response.status_code}")
                 return f"My local neural engine returned error status {response.status_code}, Sir."
-        except requests.exceptions.ConnectionError:
+        except requests.exceptions.ConnectionError as conn_err:
+            if raise_on_error: raise RuntimeError("Connection to Ollama server failed.")
             return "Sir, my cloud connection is down and the local Ollama server is not running."
         except Exception as e:
+            if raise_on_error: raise RuntimeError(f"Ollama execution error: {e}")
             return f"Local Engine Error: {e}"
 
     def _compress_response(self, original_prompt, long_response, max_lines, current_model, system_rules):
@@ -339,16 +356,23 @@ class AIBrain:
     def get_response(self, user_text, image_path=None, context=None):
         system_rules = f"You are {identity.BOT_NAME}, created by {config.OWNER_NAME}.\nPersonality: {identity.PERSONALITY}"
         
-        use_ollama = False
-        if hasattr(config, "CONVERSATION_PROVIDER") and config.CONVERSATION_PROVIDER == "ollama":
-            use_ollama = True
-            
-        if use_ollama or not self.api_keys: 
+        # Determine primary provider
+        primary_provider = getattr(config, "CONVERSATION_PROVIDER", "gemini").lower()
+        
+        if primary_provider == "ollama":
+            # Attempt local Ollama first, fallback to Gemini pool if it fails/offline
+            try:
+                ans = self._get_ollama_fallback(user_text, context, raise_on_error=True)
+                return self._enforce_line_limits(user_text, ans)
+            except Exception as e:
+                print(f"⚠️ [AIBRAIN]: Ollama conversation provider failed/offline: {e}. Falling back to cloud models.")
+                # Fall through to the rest of the function (Gemini -> ChatGPT -> Ollama fallback)
+        
+        if not self.api_keys:
             # If completely failed to connect to Gemini at boot, try ChatGPT first before Ollama
-            if not use_ollama:
-                gpt_ans = self._get_chatgpt_fallback(user_text, context, system_rules)
-                if gpt_ans:
-                    return self._enforce_line_limits(user_text, gpt_ans)
+            gpt_ans = self._get_chatgpt_fallback(user_text, context, system_rules)
+            if gpt_ans:
+                return self._enforce_line_limits(user_text, gpt_ans)
             raw_answer = self._get_ollama_fallback(user_text, context)
             return self._enforce_line_limits(user_text, raw_answer)
 

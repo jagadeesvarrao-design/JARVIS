@@ -31,7 +31,7 @@ class RotatingModel:
         is_website_build = any(kw in contents_str for kw in ["website", "web site", "flask", "html", "run.py"])
         if coding_provider == 'ollama':
             model_to_use = getattr(config, 'OLLAMA_CODING_MODEL', 'qwen2.5-coder:7b')
-            print(f"🚀 agent_module: Routing coding task directly to local Ollama model '{model_to_use}'...")
+            print(f"🚀 agent_module: Routing coding task directly and strictly to local Ollama model '{model_to_use}' (no fallback allowed)...")
             return self._call_local_ollama(contents, model_to_use)
 
         import google.generativeai as genai
