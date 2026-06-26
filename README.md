@@ -4,6 +4,7 @@
 
   [![Python](https://img.shields.io/badge/Python-3.11%20%7C%203.12-blue.svg)](https://www.python.org/)
   [![CrewAI](https://img.shields.io/badge/CrewAI-Multi--Agent%20Orchestrator-orange.svg)](https://github.com/joaomdmoura/crewAI)
+  [![Ollama](https://img.shields.io/badge/Ollama-Local%20Primary%20Brain-blue.svg)](https://ollama.com/)
   [![Gemini API](https://img.shields.io/badge/Google-Gemini%202.5%20Pro%20%2F%20Flash-green.svg)](https://deepmind.google/technologies/gemini/)
   [![License](https://img.shields.io/badge/License-MIT-purple.svg)](LICENSE)
 </div>
@@ -91,15 +92,15 @@ To guarantee no two website or webpage builds look identical, JARVIS applies dyn
 * **Bidirectional Speech Translation**: Integrates robust translation pipelines to translate incoming Telugu speech commands into structured English instructions for JARVIS's intent router, and then translate the English response back to natural conversational Telugu script before speaking.
 * **Dynamic Language Switcher**: Supports voice triggers such as *"speak in telugu"*, *"speak in hindi"*, etc., dynamically remapping voices to appropriate regional neural voice models (supporting Telugu, Hindi, Bengali, Tamil, Kannada, Malayalam, Marathi, Urdu, Gujarati, and English).
 
-### 🌐 Resilient Offline Mode, Multi-Key Pool & Multi-Cloud Fallback (ChatGPT & Ollama)
-* **Multi-Key API Pool & Auto-Rotation**: Support for a comma-separated list of Gemini API keys under `GEMINI_API_KEY` in `.env`. When the active key hits the 18 requests-per-minute (RPM) safety threshold or returns a `429 Quota Exceeded` error, JARVIS automatically rotates to the next key in the pool, ensuring uninterrupted cloud services.
-* **Secondary ChatGPT Fallback**: In the event that all Gemini API keys in the pool are exhausted or return errors, JARVIS automatically falls back to OpenAI's ChatGPT (specifically `gpt-4o-mini`, configured via `OPENAI_API_KEY` and `AI_MODEL` in `.env`). This uses a fast, direct REST payload with token limitations (capped at `150` max tokens) to ensure prompt responses with minimum token consumption.
-* **Separated Local Dual-Model Architecture (Ollama)**: If both Gemini and ChatGPT cloud endpoints are offline or return errors, JARVIS automatically routes queries to local Ollama:
-  - **General conversational queries** route to **`llama3:latest`** (configured via `OLLAMA_MODEL`).
-  - **Autonomous coding & website builds** route directly to the highly optimized **`qwen2.5-coder:7b`** (configured via `OLLAMA_CODING_MODEL`).
-* **Self-Healing Auto-Start**: If the local Ollama server is offline when a cloud API failure or fallback triggers, JARVIS automatically locates and launches the `ollama.exe` server in the background (hidden window) and polls the port (`11434`) for up to 10 seconds to ensure it is fully initialized before retrying your command.
-* **Bypass Key Rotation**: When completely offline, JARVIS detects DNS/connection errors and immediately bypasses unnecessary Gemini API key rotation retries, preventing terminal log clutter.
-* **Offline Standby Controls**: System level commands like *"go to sleep"* or *"standby"* are processed via hardcoded overrides at the top of the command processing stack, allowing standby state transitions even when both cloud and local engines are offline.
+### 🌐 Local-First Architecture with Cloud Fallbacks (Ollama, Gemini & ChatGPT)
+* **Local Ollama as Primary Brain**: To prevent API rate-limits and cloud dependency, JARVIS uses local Ollama as the primary provider for both general conversation and software coding tasks.
+* **Conversational Fallback Chain**: If local Ollama is offline or returns an error during a general conversation query, JARVIS gracefully falls back to:
+  1. **Google Gemini Key Pool**: Auto-rotates between a pool of API keys (configured via a comma-separated list under `GEMINI_API_KEY`).
+  2. **ChatGPT Fallback**: If the Gemini pool is exhausted, it falls back to OpenAI's `gpt-4o-mini` (fast, token-capped direct REST payload).
+* **Strict Offline Coding (Safety & Rate-Limit Shield)**: Software development, code generation, and CrewAI website builds are routed **strictly** to the local Ollama coding model (`qwen2.5-coder:7b` or as configured via `OLLAMA_CODING_MODEL`). To prevent cloud quota consumption and enforce codebase privacy, coding tasks are **never** allowed to fallback to cloud APIs.
+* **Self-Healing Auto-Start**: If the local Ollama server is offline when requested, JARVIS automatically locates and launches the `ollama.exe` server in the background (hidden window) and polls the port (`11434`) for up to 15 seconds to ensure it is fully initialized before proceeding.
+* **Bypass Key Rotation**: When completely offline, JARVIS detects network/DNS connection errors and immediately bypasses Gemini key rotation to prevent terminal log clutter, relying entirely on the local brain.
+* **Offline Standby Controls**: System level overrides (like *"go to sleep"* or *"standby"*) bypass both local and cloud LLMs entirely, ensuring immediate execution.
 
 ### 🧠 Persistent Vector Memory (ChromaDB)
 When commanded to *"Remember that..."*, JARVIS encodes the knowledge into vector embeddings using a local `SentenceTransformer` model and stores it inside ChromaDB. This permits semantic recall across desktop execution loops.
@@ -204,9 +205,10 @@ assistent/
 
 5. **Advanced Configuration (config.py):**
    Open [config.py](file:///c:/Users/DELL/OneDrive/Desktop/assistent/config.py) to customize your AI model settings:
-   * `CODING_PROVIDER`: Set to `"ollama"` to route all coding and website generation tasks locally, or `"gemini"` to use cloud APIs.
-   * `OLLAMA_MODEL`: The local model used for general-purpose chat fallbacks (defaults to `"llama3:latest"`).
-   * `OLLAMA_CODING_MODEL`: The local model used for coding tasks when offline or configured to run locally (defaults to `"qwen2.5-coder:7b"`).
+   * `CONVERSATION_PROVIDER`: Set to `"ollama"` to use local Ollama as the primary conversational brain (falling back to Gemini and ChatGPT on failure), or `"gemini"` to use the cloud pool directly.
+   * `CODING_PROVIDER`: Set to `"ollama"` to route all coding and website generation tasks strictly to local Ollama (no cloud fallback allowed), or `"gemini"` for cloud-based code generation.
+   * `OLLAMA_MODEL`: The local model used for general-purpose conversation (defaults to `"llama3:latest"`).
+   * `OLLAMA_CODING_MODEL`: The local model used for coding tasks (defaults to `"qwen2.5-coder:7b"`).
 
 6. **Start JARVIS:**
    ```powershell
