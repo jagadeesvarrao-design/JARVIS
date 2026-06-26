@@ -205,7 +205,7 @@ assistent/
 
 5. **Advanced Configuration (config.py):**
    Open [config.py](file:///c:/Users/DELL/OneDrive/Desktop/assistent/config.py) to customize your AI model settings:
-   * `CONVERSATION_PROVIDER`: Set to `"ollama"` to use local Ollama as the primary conversational brain (falling back to Gemini and ChatGPT on failure), or `"gemini"` to use the cloud pool directly.
+    * `CONVERSATION_PROVIDER`: Set to `"gemini"` to use the cloud Gemini pool as the primary conversational brain (falling back to local Ollama on failure), or `"ollama"` to use local Ollama as the primary brain.
    * `CODING_PROVIDER`: Set to `"ollama"` to route all coding and website generation tasks strictly to local Ollama (no cloud fallback allowed), or `"gemini"` for cloud-based code generation.
    * `OLLAMA_MODEL`: The local model used for general-purpose conversation (defaults to `"llama3:latest"`).
    * `OLLAMA_CODING_MODEL`: The local model used for coding tasks (defaults to `"qwen2.5-coder:7b"`).
