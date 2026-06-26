@@ -1,0 +1,352 @@
+import unittest
+import sys
+import os
+import time
+import shutil
+import json
+import re
+from unittest.mock import MagicMock, patch
+
+# Ensure sys.stdout handles UTF-8 output
+try:
+    sys.stdout.reconfigure(encoding='utf-8')
+    sys.stderr.reconfigure(encoding='utf-8')
+except AttributeError:
+    pass
+
+# Ensure Assist workspace is in path
+sys.path.append(os.getcwd())
+
+class TestJarvisConfig(unittest.TestCase):
+    def test_config_variables(self):
+        """Test config module attributes and key pools."""
+        import config
+        self.assertTrue(hasattr(config, "API_KEYS_POOL"), "API_KEYS_POOL should be defined in config")
+        self.assertIsInstance(config.API_KEYS_POOL, list, "API_KEYS_POOL should be a list")
+        self.assertTrue(hasattr(config, "AI_MODELS"), "AI_MODELS should be defined in config")
+        self.assertTrue(hasattr(config, "KEY_COOLDOWNS"), "KEY_COOLDOWNS should be defined in config")
+
+
+class TestJarvisIdentity(unittest.TestCase):
+    def test_identity_constants(self):
+        """Test identity module constants and introductions."""
+        import identity
+        self.assertIsNotNone(identity.BOT_NAME, "BOT_NAME should be set")
+        self.assertIsNotNone(identity.VERSION, "VERSION should be set")
+        self.assertIsNotNone(identity.CREATOR, "CREATOR should be set")
+        
+        intro = identity.get_introduction()
+        self.assertIn(identity.BOT_NAME, intro)
+        self.assertIn(identity.CREATOR, intro)
+
+
+class TestJarvisLogger(unittest.TestCase):
+    def setUp(self):
+        self.temp_log_file = "test_jarvis_temp_logs.json"
+
+    def tearDown(self):
+        if os.path.exists(self.temp_log_file):
+            try:
+                os.remove(self.temp_log_file)
+            except:
+                pass
+
+    def test_logger_read_write(self):
+        """Test logger activity logging and reading functions."""
+        import logger_module
+        logger = logger_module.ActivityLogger(filename=self.temp_log_file)
+        
+        # Test logging
+        logger.log_message("user", "Hello Jarvis")
+        logger.log_message("jarvis", "Hello Sir")
+        
+        # Test file persistence
+        self.assertTrue(os.path.exists(self.temp_log_file), "Log file should be created")
+        
+        # Test read
+        with open(self.temp_log_file, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        
+        self.assertEqual(len(data), 2)
+        self.assertEqual(data[0]["role"], "user")
+        self.assertEqual(data[1]["message"], "Hello Sir")
+
+
+class TestJarvisContact(unittest.TestCase):
+    def setUp(self):
+        self.temp_contacts = "test_contacts_temp.json"
+        # Write clean mock contacts dictionary
+        mock_data = {
+            "dad": {"phone": "+919988776655", "email": "dad@example.com"},
+            "mom": {"phone": "+918877665544", "email": "mom@example.com"},
+            "developer": {"phone": "+911234567890", "email": "dev@example.com"}
+        }
+        with open(self.temp_contacts, 'w', encoding='utf-8') as f:
+            json.dump(mock_data, f, indent=4)
+
+    def tearDown(self):
+        if os.path.exists(self.temp_contacts):
+            try:
+                os.remove(self.temp_contacts)
+            except:
+                pass
+
+    def test_contact_manager_lookup(self):
+        """Test contact fuzzy lookup and info querying."""
+        import contact_module
+        
+        cm = contact_module.ContactManager(filename=self.temp_contacts)
+        
+        # Direct match
+        dad = cm.get_contact("dad")
+        self.assertIsNotNone(dad)
+        self.assertEqual(dad["email"], "dad@example.com")
+        
+        # Fuzzy match
+        mom_fuzzy = cm.get_contact("mo")
+        self.assertIsNotNone(mom_fuzzy)
+        self.assertEqual(mom_fuzzy["email"], "mom@example.com")
+        
+        # Add contact
+        cm.add_contact("bro", "9988776655", "bro@example.com")
+        
+        bro = cm.get_contact("bro")
+        self.assertIsNotNone(bro)
+        self.assertEqual(bro["phone"], "9988776655")
+
+
+class TestJarvisMemory(unittest.TestCase):
+    def setUp(self):
+        self.temp_memory = "test_memory_temp.json"
+        mock_data = {
+            "facts": [
+                "Owner likes black coffee.",
+                "Project folder is desktop."
+            ],
+            "preferences": {},
+            "custom_rules": []
+        }
+        with open(self.temp_memory, 'w', encoding='utf-8') as f:
+            json.dump(mock_data, f, indent=4)
+
+    def tearDown(self):
+        if os.path.exists(self.temp_memory):
+            try:
+                os.remove(self.temp_memory)
+            except:
+                pass
+
+    def test_memory_recall_and_save(self):
+        """Test memory load, recall, and persistence logic."""
+        import memory_moduler
+        
+        ms = memory_moduler.MemorySystem(filename=self.temp_memory)
+        
+        # Test list recall
+        facts_str = ms.recall()
+        self.assertIsNotNone(facts_str)
+        self.assertIn("Owner likes black coffee.", facts_str)
+        
+        # Test remember logic
+        ms.remember_fact("remember that Owner prefers Python coding.")
+        recalled = ms.recall()
+        self.assertIn("Owner prefers python coding.", recalled)
+
+
+class TestJarvisSpeech(unittest.TestCase):
+    @patch('speech_recognition.Microphone')
+    @patch('speech_recognition.Recognizer')
+    def test_speech_recognizer_init(self, mock_rec, mock_mic):
+        """Test SpeechRecognizer parameters initialization."""
+        import speech_module
+        
+        sr_obj = speech_module.SpeechRecognizer()
+        self.assertIsNotNone(sr_obj.recognizer)
+        self.assertIsNotNone(sr_obj.microphone)
+        self.assertEqual(sr_obj.recognizer.pause_threshold, 4.0)
+        
+    def test_speech_regex_routing(self):
+        """Test language triggers matching regexes."""
+        import speech_module
+        
+        # Telugu detection
+        self.assertTrue(bool(speech_module.TELUGU_SCRIPT_RE.search("హలో జార్విస్")))
+        self.assertFalse(bool(speech_module.TELUGU_SCRIPT_RE.search("Hello Jarvis")))
+
+
+class TestJarvisVision(unittest.TestCase):
+    @patch('vision_module.VisionSystem._gdi_capture')
+    def test_vision_screen_change(self, mock_gdi):
+        """Test VisionSystem frame differences and downsampling."""
+        import vision_module
+        from PIL import Image
+        
+        vs = vision_module.VisionSystem()
+        
+        # Create a mock solid image
+        img1 = Image.new('RGB', (1920, 1080), color='white')
+        img2 = Image.new('RGB', (1920, 1080), color='black')
+        
+        mock_gdi.return_value = img1
+        
+        # First capture returns True (initialization frame)
+        changed_first = vs.has_screen_changed()
+        self.assertTrue(changed_first)
+        
+        # Same image returns False (no change)
+        changed_same = vs.has_screen_changed()
+        self.assertFalse(changed_same)
+        
+        # Different image returns True
+        mock_gdi.return_value = img2
+        changed_diff = vs.has_screen_changed()
+        self.assertTrue(changed_diff)
+
+
+class TestJarvisAutomation(unittest.TestCase):
+    @patch('ctypes.windll.user32.GetForegroundWindow')
+    @patch('ctypes.windll.user32.GetWindowTextLengthW')
+    @patch('ctypes.windll.user32.GetWindowTextW')
+    def test_automation_controller(self, mock_text, mock_length, mock_hwnd):
+        """Test active window title sensor."""
+        import automation_module
+        
+        # Mock window title retrieval
+        mock_hwnd.return_value = 12345
+        mock_length.return_value = 18
+        
+        def mock_get_text(hwnd, buf, size):
+            buf.value = "Visual Studio Code"
+            return 18
+        mock_text.side_effect = mock_get_text
+        
+        ac = automation_module.ApplicationController()
+        title = ac.get_active_window_title()
+        self.assertEqual(title, "visual studio code")
+
+
+class TestJarvisAIBrain(unittest.TestCase):
+    @patch('requests.get')
+    def test_ai_brain_key_rotation(self, mock_get):
+        """Test AIBrain key rotation indices."""
+        import ai_module
+        import config
+        
+        # Setup mock configs
+        config.API_KEYS_POOL = ["key1", "key2", "key3"]
+        config.KEY_COOLDOWNS = {}
+        
+        brain = ai_module.AIBrain()
+        self.assertEqual(brain.current_key_index, 0)
+        
+        # Verify get available index returns expected key
+        self.assertEqual(brain._get_available_key_index(), 0)
+        
+        # Trigger rotation
+        brain._rotate_key()
+        self.assertEqual(brain.current_key_index, 1)
+
+    @patch('requests.post')
+    def test_openai_fallback(self, mock_post):
+        """Test ChatGPT fallback query wrapper."""
+        import ai_module
+        import config
+        
+        config.OPENAI_API_KEY = "test-openai-key"
+        config.GPT_MODEL = "gpt-4o-mini"
+        
+        brain = ai_module.AIBrain()
+        
+        # Mock response
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {
+            "choices": [{"message": {"content": "Fallback response content"}}]
+        }
+        mock_post.return_value = mock_resp
+        
+        fallback_text = brain._get_chatgpt_fallback("Tell me a story", "History context", "Rules")
+        self.assertEqual(fallback_text, "Fallback response content")
+
+
+class TestJarvisProactive(unittest.TestCase):
+    @patch('psutil.sensors_battery')
+    @patch('psutil.cpu_percent')
+    def test_proactive_health_checks(self, mock_cpu, mock_bat):
+        """Test proactive health system sweeps."""
+        import proactive_module
+        
+        # Setup battery info mock
+        mock_battery_info = MagicMock()
+        mock_battery_info.percent = 15
+        mock_battery_info.power_plugged = False
+        mock_bat.return_value = mock_battery_info
+        
+        # Setup CPU usage mock
+        mock_cpu.return_value = 90.0
+        
+        pa = proactive_module.ProactiveAgent()
+        
+        # Use mocked speaks
+        pa.speak = MagicMock()
+        pa.check_system_health()
+        
+        # Assert low battery warning speaks
+        pa.speak.assert_any_call("Critical Power. Battery is at 15 percent. Please plug in.")
+
+
+class TestJarvisAgents(unittest.TestCase):
+    def test_document_generation(self):
+        """Test DocumentAgent generation of TXT outputs."""
+        import agent_module
+        doc_agent = agent_module.DocumentAgent()
+        
+        # Create temp TXT
+        path = doc_agent.create_file("TestDoc", "This is some test content.", "txt")
+        self.assertTrue(os.path.exists(path))
+        
+        # Read back and check
+        with open(path, 'r', encoding='utf-8') as f:
+            content = f.read()
+        self.assertIn("This is some test content.", content)
+        
+        # Cleanup
+        try:
+            os.remove(path)
+        except:
+            pass
+
+
+class TestJarvisIntentOrchestration(unittest.TestCase):
+    def test_telugu_auto_translation_regex(self):
+        """Test that Telugu strings are correctly identified for routing."""
+        import jarvis
+        
+        # Telugu text matches regex
+        self.assertTrue(bool(jarvis.TELUGU_SCRIPT_RE.search("జార్విస్ హలో")))
+        self.assertFalse(bool(jarvis.TELUGU_SCRIPT_RE.search("Hello Jarvis")))
+
+
+class TestJarvisSkills(unittest.TestCase):
+    def test_skills_triggers(self):
+        """Test triggers definitions in skills files."""
+        from skills import email_skill, file_management, media_skill, orchestration_skill, recorder_skill, shopper_agent, whatsapp_skill
+        
+        self.assertGreater(len(email_skill.get_triggers()), 0)
+        self.assertGreater(len(file_management.get_triggers()), 0)
+        self.assertGreater(len(media_skill.get_triggers()), 0)
+        self.assertGreater(len(orchestration_skill.get_triggers()), 0)
+        self.assertGreater(len(recorder_skill.get_triggers()), 0)
+        self.assertGreater(len(shopper_agent.get_triggers()), 0)
+        self.assertGreater(len(whatsapp_skill.get_triggers()), 0)
+
+
+class TestJarvisScripts(unittest.TestCase):
+    def test_dependency_checking(self):
+        """Test check_deps logic imports without crash."""
+        import check_deps
+        self.assertTrue(hasattr(check_deps, "is_stdlib"))
+
+
+if __name__ == "__main__":
+    unittest.main()

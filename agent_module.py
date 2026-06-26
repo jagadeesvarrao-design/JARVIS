@@ -29,7 +29,7 @@ class RotatingModel:
         coding_provider = getattr(config, 'CODING_PROVIDER', 'gemini').lower()
         contents_str = str(contents).lower()
         is_website_build = any(kw in contents_str for kw in ["website", "web site", "flask", "html", "run.py"])
-        if coding_provider == 'ollama' or is_website_build:
+        if coding_provider == 'ollama':
             model_to_use = getattr(config, 'OLLAMA_CODING_MODEL', 'qwen2.5-coder:7b')
             print(f"🚀 agent_module: Routing coding task directly to local Ollama model '{model_to_use}'...")
             return self._call_local_ollama(contents, model_to_use)
@@ -77,7 +77,10 @@ class RotatingModel:
                 
                 for transient_attempt in range(max_transient_attempts):
                     try:
-                        response = m_obj.generate_content(contents)
+                        if "json" in contents_str:
+                            response = m_obj.generate_content(contents, generation_config={"response_mime_type": "application/json"})
+                        else:
+                            response = m_obj.generate_content(contents)
                         success = True
                         break
                     except Exception as e:
@@ -223,7 +226,7 @@ class RotatingModel:
         }
         
         try:
-            response = requests.post(config.OLLAMA_URL, json=payload, timeout=120.0)
+            response = requests.post(config.OLLAMA_URL, json=payload, timeout=300.0)
             if response.status_code == 200:
                 answer = response.json().get("response", "I could not generate a thought, Sir.")
                 return MockResponse(answer.strip())
@@ -1071,6 +1074,8 @@ class ProjectAgent:
         if not os.path.exists(venv_dir) or not os.path.exists(venv_python):
             self._log("task", "Setting up isolated virtual environment sandbox...")
             subprocess.run([sys.executable, "-m", "venv", ".venv"], cwd=self.project_path)
+            # Ensure pip is repaired/restored in the sandbox
+            subprocess.run([venv_python, "-m", "ensurepip", "--default-pip"], cwd=self.project_path)
             
             # Install dependencies in the sandbox
             req_file = os.path.join(self.project_path, "requirements.txt")
@@ -1079,12 +1084,22 @@ class ProjectAgent:
                 # Use pip inside venv to install requirements
                 subprocess.run([venv_python, "-m", "pip", "install", "-r", "requirements.txt"], cwd=self.project_path)
         
+        # Verify if Flask is working in sandbox python, otherwise fallback to primary environment python
+        python_to_run = venv_python
+        try:
+            val_res = subprocess.run([venv_python, "-c", "import flask"], capture_output=True, text=True)
+            if val_res.returncode != 0:
+                self._log("system", "Flask not found or broken in sandbox .venv. Falling back to primary environment python.")
+                python_to_run = sys.executable
+        except Exception:
+            python_to_run = sys.executable
+
         # 2. Database Seed (Enterprise Style)
         db_path = os.path.join(self.project_path, "instance", "site.db")
         if not os.path.exists(db_path):
             self._log("task", "Database site.db not found. Seeding SQLite tables in sandbox...")
             seed_cmd = "from app import create_app, db; app = create_app(); app.app_context().push(); db.create_all()"
-            subprocess.run(f'cd "{self.project_path}" && "{venv_python}" -c "{seed_cmd}"', shell=True)
+            subprocess.run(f'cd "{self.project_path}" && "{python_to_run}" -c "{seed_cmd}"', shell=True)
 
         # 3. Launch Server (redirect stdout/stderr to a log file to avoid subprocess pipe buffer locks)
         log_file_path = os.path.join(self.project_path, "flask_server.log")
@@ -1095,7 +1110,7 @@ class ProjectAgent:
             self.server_log_file = subprocess.DEVNULL
 
         self.server_process = subprocess.Popen(
-            [venv_python, "run.py"],
+            [python_to_run, "run.py"],
             cwd=self.project_path,
             stdout=self.server_log_file,
             stderr=self.server_log_file,

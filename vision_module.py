@@ -80,7 +80,10 @@ class VisionSystem:
                 
             # Downsample image to 160x90 and convert to L (grayscale)
             small_img = img.resize((160, 90), Image.Resampling.BILINEAR).convert('L')
-            current_gray = list(small_img.getdata())
+            try:
+                current_gray = list(small_img.get_flattened_data())
+            except AttributeError:
+                current_gray = list(small_img.getdata())
             
             if self.last_frame is None:
                 self.last_frame = current_gray
