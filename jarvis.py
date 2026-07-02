@@ -59,11 +59,19 @@ voice_queue = queue.Queue()
 stop_speech_event = threading.Event()
 speaking_callback = None
 use_edge_tts = True
+last_edge_tts_error_time = 0.0
+EDGE_TTS_RETRY_COOLDOWN = 60.0  # seconds
 
 # The dedicated voice-only worker
 def voice_worker():
     import pyttsx3
     import pygame
+    import pythoncom
+    
+    try:
+        pythoncom.CoInitialize()
+    except Exception as ce:
+        print(f"⚠️ [SPEECH SYSTEM]: pythoncom.CoInitialize() failed: {ce}")
     
     # Initialize Pygame Mixer for MP3 playback
     try:
@@ -105,7 +113,14 @@ def voice_worker():
                 stop_speech_event.clear()
                 continue
                 
-            global speaking_callback, use_edge_tts
+            global speaking_callback, use_edge_tts, last_edge_tts_error_time
+            
+            # Retry Edge TTS if cooldown has expired
+            current_time = time.time()
+            if not use_edge_tts and (current_time - last_edge_tts_error_time > EDGE_TTS_RETRY_COOLDOWN):
+                print("🌐 [SPEECH SYSTEM]: Retrying Edge TTS connection...")
+                use_edge_tts = True
+
             if speaking_callback:
                 try:
                     speaking_callback(True)
@@ -123,7 +138,7 @@ def voice_worker():
                             communicate = edge_tts.Communicate(text, voice)
                             await communicate.save(temp_file)
                         
-                        loop.run_until_complete(asyncio.wait_for(run_tts(), timeout=10.0))
+                        loop.run_until_complete(asyncio.wait_for(run_tts(), timeout=3.0))
                         success = True
                     except Exception as e:
                         success = False
@@ -138,8 +153,9 @@ def voice_worker():
                         )
                         if is_network_issue:
                             err_msg = str(e) if str(e) else type(e).__name__
-                            print(f"🌐 [SPEECH SYSTEM]: Network issues detected ({err_msg}). Disabling Edge TTS for this session to prevent lagging and falling back to pyttsx3.")
+                            print(f"🌐 [SPEECH SYSTEM]: Network issues detected ({err_msg}). Falling back to pyttsx3 temporarily. Will retry in {EDGE_TTS_RETRY_COOLDOWN}s.")
                             use_edge_tts = False
+                            last_edge_tts_error_time = time.time()
                         else:
                             print(f"⚠️ Edge TTS failed: {e if str(e) else type(e).__name__}. Falling back to pyttsx3.")
                         
@@ -165,13 +181,19 @@ def voice_worker():
                             print(f"⚠️ Pygame Playback Error: {pe}. Falling back to pyttsx3.")
                             # Fallback speech
                             if engine:
-                                engine.say(text)
-                                engine.runAndWait()
+                                # Filter out non-ASCII/non-Latin characters for pyttsx3
+                                clean_text = re.sub(r'[^\x00-\x7F]+', '', text).strip()
+                                if clean_text:
+                                    engine.say(clean_text)
+                                    engine.runAndWait()
                     else:
                         # Fallback speech
                         if engine:
-                            engine.say(text)
-                            engine.runAndWait()
+                            # Filter out non-ASCII/non-Latin characters for pyttsx3
+                            clean_text = re.sub(r'[^\x00-\x7F]+', '', text).strip()
+                            if clean_text:
+                                engine.say(clean_text)
+                                engine.runAndWait()
             finally:
                 if speaking_callback:
                     try:
