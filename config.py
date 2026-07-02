@@ -21,7 +21,6 @@ for _k in _fallbacks:
         API_KEYS_POOL.append(_k)
 # Preferred models for 2026. Prioritizing lightweight, token-efficient models (Gemini 2.5/2.0 Flash family).
 AI_MODELS = [
-    "gemini-3.1-flash",
     "gemini-2.5-flash",
     "gemini-3.1-pro",
     "gemini-3.1-flashlite"
@@ -80,4 +79,4 @@ SPEAKER_THRESHOLD = 0.25  # Standard ECAPA-TDNN cosine similarity threshold
 
 # ==================== DEPLOYMENT ====================
 NGROK_AUTHTOKEN = os.getenv("NGROK_AUTHTOKEN")
-
+
