@@ -163,7 +163,7 @@ class TestJarvisSpeech(unittest.TestCase):
         sr_obj = speech_module.SpeechRecognizer()
         self.assertIsNotNone(sr_obj.recognizer)
         self.assertIsNotNone(sr_obj.microphone)
-        self.assertEqual(sr_obj.recognizer.pause_threshold, 4.0)
+        self.assertEqual(sr_obj.recognizer.pause_threshold, 1.2)
         
     def test_speech_regex_routing(self):
         """Test language triggers matching regexes."""

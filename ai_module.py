@@ -527,24 +527,42 @@ class AIBrain:
             return None
 
         # Routing Flow
-        print("🧠 [AIBRAIN]: Using Gemini models as primary conversation brain...")
-        if self.api_keys:
-            ans = run_gemini()
-            if ans:
-                return ans
-                
-        # If Gemini fails or we have no API keys, fall back to local Ollama
+        use_ollama = getattr(config, "CONVERSATION_PROVIDER", "gemini") == "ollama"
         fallback_model = getattr(config, "OLLAMA_MULTILINGUAL_MODEL", "gemma") if is_multilingual else getattr(config, "OLLAMA_ENGLISH_MODEL", "llama")
-        print(f"⚠️ [AIBRAIN]: Gemini failed or offline. Falling back to local Ollama model '{fallback_model}'...")
-        try:
-            ans = self._get_ollama_fallback(user_text, context, raise_on_error=True, model_name=fallback_model)
-            return self._enforce_line_limits(user_text, ans)
-        except Exception as e:
-            print(f"⚠️ [AIBRAIN]: Local Ollama ('{fallback_model}') failed/offline: {e}. Trying ChatGPT fallback...")
-            gpt_ans = self._get_chatgpt_fallback(user_text, context, system_rules)
-            if gpt_ans:
-                return self._enforce_line_limits(user_text, gpt_ans)
+        
+        if use_ollama:
+            print(f"🧠 [AIBRAIN]: Using local Ollama model '{fallback_model}' as primary conversation brain...")
+            try:
+                ans = self._get_ollama_fallback(user_text, context, raise_on_error=True, model_name=fallback_model)
+                return self._enforce_line_limits(user_text, ans)
+            except Exception as e:
+                print(f"⚠️ [AIBRAIN]: Local Ollama failed/offline: {e}. Falling back to Gemini...")
+                if self.api_keys:
+                    ans = run_gemini()
+                    if ans:
+                        return ans
+        else:
+            print("🧠 [AIBRAIN]: Using Gemini models as primary conversation brain...")
+            if self.api_keys:
+                ans = run_gemini()
+                if ans:
+                    return ans
+                    
+        # If both primary methods fail, fall back to local Ollama (if not already tried) or other options
+        if not use_ollama:
+            print(f"⚠️ [AIBRAIN]: Gemini failed or offline. Falling back to local Ollama model '{fallback_model}'...")
+            try:
+                ans = self._get_ollama_fallback(user_text, context, raise_on_error=True, model_name=fallback_model)
+                return self._enforce_line_limits(user_text, ans)
+            except Exception as e:
+                pass
+                
+        # ChatGPT / ultimate fallback
+        print(f"⚠️ [AIBRAIN]: Primary options failed. Trying ChatGPT fallback...")
+        gpt_ans = self._get_chatgpt_fallback(user_text, context, system_rules)
+        if gpt_ans:
+            return self._enforce_line_limits(user_text, gpt_ans)
             
-            # If ChatGPT also fails, final fallback to local Ollama (suppressing raise_on_error to return error message gracefully)
-            ans = self._get_ollama_fallback(user_text, context, raise_on_error=False, model_name=fallback_model)
-            return self._enforce_line_limits(user_text, ans)
+        # If ChatGPT also fails, final fallback to local Ollama (suppressing raise_on_error to return error message gracefully)
+        ans = self._get_ollama_fallback(user_text, context, raise_on_error=False, model_name=fallback_model)
+        return self._enforce_line_limits(user_text, ans)

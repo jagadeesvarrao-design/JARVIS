@@ -40,6 +40,7 @@ WAKE_WORD = "jarvis"
 VOICE_RATE = 175
 VOICE_VOLUME = 1.0
 TTS_VOICE = "en-IN-PrabhatNeural"
+TTS_TIMEOUT = 12.0
 
 
 # ==================== EMAIL SETTINGS ====================

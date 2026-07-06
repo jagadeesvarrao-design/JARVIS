@@ -138,8 +138,17 @@ def voice_worker():
                             communicate = edge_tts.Communicate(text, voice)
                             await communicate.save(temp_file)
                         
-                        loop.run_until_complete(asyncio.wait_for(run_tts(), timeout=3.0))
-                        success = True
+                        timeout_val = getattr(config, "TTS_TIMEOUT", 12.0)
+                        max_retries = 2
+                        for attempt in range(max_retries):
+                            try:
+                                loop.run_until_complete(asyncio.wait_for(run_tts(), timeout=timeout_val))
+                                success = True
+                                break
+                            except Exception as re_err:
+                                if attempt == max_retries - 1:
+                                    raise re_err
+                                time.sleep(0.5)
                     except Exception as e:
                         success = False
                         err_str = str(e).lower()
