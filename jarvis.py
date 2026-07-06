@@ -459,8 +459,8 @@ class JARVIS:
                 if not reconnected:
                     print("⚠️ [SYSTEM]: Ollama server did not respond within 15 seconds.")
             
-            # Check connection at a random interval between 20 and 60 seconds
-            sleep_time = random.randint(20, 60)
+            # Check connection every 120 seconds (2 minutes)
+            sleep_time = 120
             time.sleep(sleep_time)
     def _respond(self, text, voice=None):
         if text:
