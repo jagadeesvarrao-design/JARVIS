@@ -35,20 +35,50 @@ class HologramPopup(QDialog):
         super().__init__(parent)
         self.setWindowTitle(f"Hologram: {query}")
         self.setFixedSize(600, 400)
-        self.setStyleSheet("background-color: #000000; border: 2px solid #333333;")
         self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
+        self.setAttribute(Qt.WA_TranslucentBackground)
         
-        layout = QVBoxLayout(self)
+        # Outer transparent layout
+        dialog_layout = QVBoxLayout(self)
+        dialog_layout.setContentsMargins(0, 0, 0, 0)
+        
+        # White Glassmorphic Container
+        self.container = QFrame()
+        self.container.setStyleSheet("""
+            QFrame {
+                background-color: rgba(255, 255, 255, 210);
+                border: 2px solid rgba(255, 255, 255, 0.5);
+                border-radius: 15px;
+            }
+        """)
+        dialog_layout.addWidget(self.container)
+        
+        # Layout inside container
+        layout = QVBoxLayout(self.container)
+        layout.setContentsMargins(15, 15, 15, 15)
         
         # Image Label
         self.img_label = QLabel("INITIALIZING HOLOGRAM...")
         self.img_label.setAlignment(Qt.AlignCenter)
-        self.img_label.setStyleSheet("color: #ffffff; font-family: Consolas; font-size: 14px;")
+        self.img_label.setStyleSheet("color: #333333; font-family: Consolas; font-size: 14px; font-weight: bold; background: transparent; border: none;")
         layout.addWidget(self.img_label)
         
         # Close Button
         btn = QPushButton("CLOSE PROJECTION")
-        btn.setStyleSheet("background-color: #222222; color: #ffffff; font-weight: bold; border: 1px solid #444444;")
+        btn.setStyleSheet("""
+            QPushButton {
+                background-color: rgba(0, 0, 0, 0.75);
+                color: #ffffff;
+                font-weight: bold;
+                font-family: Consolas;
+                border: 1px solid rgba(255, 255, 255, 0.2);
+                border-radius: 8px;
+                padding: 10px;
+            }
+            QPushButton:hover {
+                background-color: rgba(0, 0, 0, 0.85);
+            }
+        """)
         btn.clicked.connect(self.close)
         layout.addWidget(btn)
         
@@ -62,7 +92,7 @@ class HologramPopup(QDialog):
             data = requests.get(url, timeout=5).content
             pixmap = QPixmap()
             pixmap.loadFromData(data)
-            self.img_label.setPixmap(pixmap.scaled(580, 350, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+            self.img_label.setPixmap(pixmap.scaled(570, 310, Qt.KeepAspectRatio, Qt.SmoothTransformation))
         except Exception as e:
             self.img_label.setText(f"VISUAL ERROR: {e}")
 
@@ -326,7 +356,8 @@ class AddContactDialog(QDialog):
         self.setFixedSize(350, 250)
         # Sci-Fi Style Form
         self.setStyleSheet("""
-            QDialog { background-color: #0a0a0a; border: 2px solid #333333; }
+            QDialog { background-color: #000000; border: 2px solid #333333; }
+            QMessageBox { background-color: #000000; color: #ffffff; }
             QLabel { color: #ffffff; font-weight: bold; font-family: Arial; }
             QLineEdit { background-color: #222; color: white; padding: 5px; border: 1px solid #444; }
             QPushButton { background-color: #222; color: white; padding: 8px; border-radius: 4px; font-weight: bold; border: 1px solid #444; }
@@ -483,16 +514,16 @@ class JarvisDock(QMainWindow):
         self.cmd_input.setPlaceholderText("Type silent command and press Enter...")
         self.cmd_input.setStyleSheet("""
             QLineEdit {
-                background-color: rgba(20, 20, 20, 180);
-                border: 1px solid #333333;
+                background-color: #ffffff;
+                border: 1px solid #cccccc;
                 border-radius: 5px;
-                color: #ffffff;
+                color: #1a1a1a;
                 font-family: Consolas;
                 font-size: 12px;
                 padding: 4px;
             }
             QLineEdit:focus {
-                border: 1px solid #ffffff;
+                border: 1px solid #1a1a1a;
             }
         """)
         self.cmd_input.returnPressed.connect(self.submit_text_command)
