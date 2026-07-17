@@ -1,0 +1,551 @@
+================================================================================
+FILE 1: jarvis_api.py
+LOCATION: C:\Users\DELL\OneDrive\Desktop\assistent\jarvis_api.py
+================================================================================
+
+import sys
+import os
+import json
+import threading
+import time
+import re
+from http.server import HTTPServer, BaseHTTPRequestHandler
+import pythoncom
+
+# Set up paths to import local modules
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
+import config
+from jarvis import JARVIS, voice_queue, log_to_dashboard
+
+# Global states to track JARVIS's status
+global_state = "idle"
+last_user_query = ""
+last_jarvis_response = ""
+
+class JarvisApiHandler(BaseHTTPRequestHandler):
+    def _set_cors_headers(self):
+        self.send_header('Access-Control-Allow-Origin', '*')
+        self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+        self.send_header('Access-Control-Allow-Headers', 'Content-Type')
+
+    def do_OPTIONS(self):
+        self.send_response(200)
+        self._set_cors_headers()
+        self.end_headers()
+
+    def do_GET(self):
+        global global_state, last_user_query, last_jarvis_response
+        
+        if self.path == '/api/status':
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self._set_cors_headers()
+            self.end_headers()
+            
+            recent_logs = []
+            log_file = "jarvis_logs.jsonl"
+            if os.path.exists(log_file):
+                try:
+                    with open(log_file, "r", encoding="utf-8") as f:
+                        lines = f.readlines()
+                        for line in lines[-10:]:
+                            recent_logs.append(json.loads(line.strip()))
+                except Exception:
+                    pass
+
+            response_data = {
+                "status": global_state,
+                "last_query": last_user_query,
+                "last_response": last_jarvis_response,
+                "logs": recent_logs
+            }
+            self.wfile.write(json.dumps(response_data).encode('utf-8'))
+        else:
+            self.send_response(404)
+            self.end_headers()
+
+    def do_POST(self):
+        global global_state, last_user_query, last_jarvis_response
+        
+        if self.path == '/api/command':
+            content_length = int(self.headers['Content-Length'])
+            post_data = self.rfile.read(content_length)
+            
+            try:
+                data = json.loads(post_data.decode('utf-8'))
+                command = data.get('command', '')
+            except Exception as e:
+                self.send_response(400)
+                self._set_cors_headers()
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": "Invalid JSON"}).encode('utf-8'))
+                return
+
+            if not command:
+                self.send_response(400)
+                self._set_cors_headers()
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": "Empty command"}).encode('utf-8'))
+                return
+
+            print(f"🌐 [API Server]: Executing command: {command}")
+            last_jarvis_response = ""
+            
+            jarvis_instance.process_command(command)
+            
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self._set_cors_headers()
+            self.end_headers()
+            
+            self.wfile.write(json.dumps({
+                "query": command,
+                "response": last_jarvis_response,
+                "status": global_state,
+                "success": True
+            }).encode('utf-8'))
+            
+        elif self.path == '/api/listen':
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self._set_cors_headers()
+            self.end_headers()
+            
+            print("🌐 [API Server]: Listening triggered via API")
+            recognized_text = jarvis_instance._listen_for_command()
+            
+            self.wfile.write(json.dumps({
+                "recognized": recognized_text,
+                "success": True
+            }).encode('utf-8'))
+        else:
+            self.send_response(404)
+            self.end_headers()
+
+def run_api_server():
+    server_address = ('', 5001)
+    httpd = HTTPServer(server_address, JarvisApiHandler)
+    print("🚀 [API Server]: JARVIS API server running on http://localhost:5001")
+    httpd.serve_forever()
+
+if __name__ == "__main__":
+    pythoncom.CoInitialize()
+    jarvis_instance = JARVIS()
+    
+    original_respond = jarvis_instance._respond
+    original_listen = jarvis_instance._listen_for_command
+    original_process = jarvis_instance.process_command
+    
+    def api_respond(text, voice=None):
+        global last_jarvis_response
+        last_jarvis_response = text
+        original_respond(text, voice=voice)
+        
+    def api_listen():
+        global global_state
+        global_state = "listening"
+        res = original_listen()
+        global_state = "thinking"
+        return res
+        
+    def api_process(text):
+        global last_user_query, global_state
+        last_user_query = text
+        global_state = "thinking"
+        log_to_dashboard("user", text)
+        res = original_process(text)
+        global_state = "idle"
+        return res
+        
+    def api_speaking_state_changed(is_speaking):
+        global global_state
+        if is_speaking:
+            global_state = "speaking"
+        else:
+            global_state = "idle"
+
+    jarvis_instance._respond = api_respond
+    jarvis_instance._listen_for_command = api_listen
+    jarvis_instance.process_command = api_process
+    
+    import jarvis
+    jarvis.speaking_callback = api_speaking_state_changed
+
+    api_thread = threading.Thread(target=run_api_server, daemon=True)
+    api_thread.start()
+    
+    try:
+        jarvis_instance.run()
+    except KeyboardInterrupt:
+        print("Stopping JARVIS...")
+    finally:
+        pythoncom.CoUninitialize()
+
+
+================================================================================
+FILE 2: JarvisOrb.tsx
+LOCATION: C:\Users\DELL\OneDrive\Desktop\PROJECTS\ultron-by-sagar-builds\components\JarvisOrb.tsx
+================================================================================
+
+"use client";
+
+import { useCallback, useEffect, useRef, useState } from "react";
+import { createOrbScene, type OrbSceneApi } from "@/lib/orbScene";
+import { HandTracker, type TrackerStatus } from "@/lib/handTracker";
+
+type CameraState = "off" | "starting" | "on" | "error";
+type JarvisStatusType = "idle" | "listening" | "thinking" | "speaking" | "offline";
+
+const MODE_LABEL: Record<TrackerStatus["mode"], string> = {
+  idle: "STANDBY",
+  spin: "SPIN",
+  zoom: "ZOOM",
+};
+
+export default function JarvisOrb() {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const overlayRef = useRef<HTMLCanvasElement>(null);
+  const sceneRef = useRef<OrbSceneApi | null>(null);
+  const trackerRef = useRef<HandTracker | null>(null);
+
+  const [camera, setCamera] = useState<CameraState>("off");
+  const [status, setStatus] = useState<TrackerStatus>({ hands: 0, mode: "idle" });
+  const [error, setError] = useState<string | null>(null);
+
+  const [jarvisStatus, setJarvisStatus] = useState<JarvisStatusType>("offline");
+  const [commandInput, setCommandInput] = useState("");
+  const [lastQuery, setLastQuery] = useState("");
+  const [lastResponse, setLastResponse] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    const scene = createOrbScene(container);
+    sceneRef.current = scene;
+    return () => {
+      trackerRef.current?.stop();
+      trackerRef.current = null;
+      scene.dispose();
+      sceneRef.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    const pollStatus = async () => {
+      try {
+        const res = await fetch("http://localhost:5001/api/status", { mode: "cors" });
+        if (!active) return;
+        if (res.ok) {
+          const data = await res.json();
+          setJarvisStatus(data.status);
+          if (data.last_query) setLastQuery(data.last_query);
+          if (data.last_response) setLastResponse(data.last_response);
+        } else {
+          setJarvisStatus("offline");
+        }
+      } catch (err) {
+        if (active) setJarvisStatus("offline");
+      }
+    };
+
+    const interval = setInterval(pollStatus, 500);
+    pollStatus();
+
+    return () => {
+      active = false;
+      clearInterval(interval);
+    };
+  }, []);
+
+  useEffect(() => {
+    let rafId: number;
+    const animateCamera = () => {
+      if (sceneRef.current) {
+        if (jarvisStatus === "listening") {
+          sceneRef.current.rotateBy(0.003, 0);
+        } else if (jarvisStatus === "thinking") {
+          sceneRef.current.rotateBy(0.02, 0);
+        } else if (jarvisStatus === "speaking") {
+          const time = Date.now() * 0.003;
+          sceneRef.current.rotateBy(0.005 * Math.sin(time), 0.003 * Math.cos(time));
+        }
+      }
+      rafId = requestAnimationFrame(animateCamera);
+    };
+    animateCamera();
+    return () => cancelAnimationFrame(rafId);
+  }, [jarvisStatus]);
+
+  const stopGestures = useCallback(() => {
+    trackerRef.current?.stop();
+    trackerRef.current = null;
+    setCamera("off");
+    setStatus({ hands: 0, mode: "idle" });
+  }, []);
+
+  const startGestures = useCallback(async () => {
+    const video = videoRef.current;
+    const overlay = overlayRef.current;
+    if (!video || !overlay || trackerRef.current) return;
+
+    setCamera("starting");
+    setError(null);
+
+    const tracker = new HandTracker(video, overlay, {
+      onRotate: (dt, dp) => sceneRef.current?.rotateBy(dt, dp),
+      onZoom: (factor) => sceneRef.current?.zoomBy(factor),
+      onStatus: setStatus,
+    });
+    trackerRef.current = tracker;
+
+    try {
+      await tracker.start();
+      setCamera("on");
+    } catch (err) {
+      trackerRef.current = null;
+      tracker.stop();
+      setCamera("error");
+      setError(
+        err instanceof DOMException && err.name === "NotAllowedError"
+          ? "CAMERA ACCESS DENIED"
+          : "TRACKING INIT FAILED",
+      );
+    }
+  }, []);
+
+  const toggleGestures = useCallback(() => {
+    if (trackerRef.current) stopGestures();
+    else void startGestures();
+  }, [startGestures, stopGestures]);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (document.activeElement?.tagName === "INPUT") return;
+      
+      switch (e.key) {
+        case "+":
+        case "=":
+          sceneRef.current?.zoomIn();
+          break;
+        case "-":
+        case "_":
+          sceneRef.current?.zoomOut();
+          break;
+        case "r":
+        case "R":
+          sceneRef.current?.resetView();
+          break;
+        case "g":
+        case "G":
+          toggleGestures();
+          break;
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [toggleGestures]);
+
+  const handleSendCommand = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!commandInput.trim() || isSubmitting) return;
+
+    setIsSubmitting(true);
+    const cmd = commandInput;
+    setCommandInput("");
+    setLastQuery(cmd);
+    setJarvisStatus("thinking");
+
+    try {
+      const res = await fetch("http://localhost:5001/api/command", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ command: cmd }),
+        mode: "cors"
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data.response) {
+          setLastResponse(data.response);
+        }
+      } else {
+        setLastResponse("API Request Failed.");
+      }
+    } catch (err) {
+      setLastResponse("Failed to communicate with JARVIS.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const cameraOn = camera === "on";
+
+  const getStatusColor = () => {
+    switch (jarvisStatus) {
+      case "listening": return "#00ffcc";
+      case "thinking": return "#ffcc00";
+      case "speaking": return "#ff3366";
+      case "idle": return "#ffaa30";
+      default: return "#555555";
+    }
+  };
+
+  return (
+    <>
+      <div ref={containerRef} className="orb-root" />
+
+      <div className="overlay-vignette" />
+      <div className="overlay-grain" />
+      <div className="overlay-scanlines" />
+
+      <div className="hud hud-title">
+        J.A.R.V.I.S. // U.L.T.R.O.N.
+      </div>
+
+      <div className="hud" style={{ top: "80px", left: "24px", width: "350px", pointerEvents: "auto", display: "flex", flexDirection: "column", gap: "10px" }}>
+        <div style={{
+          background: "rgba(20, 10, 0, 0.45)",
+          border: `1px solid ${getStatusColor()}`,
+          padding: "12px",
+          borderRadius: "4px",
+          fontSize: "12px",
+          letterSpacing: "0.1em",
+          color: "#ffaa30",
+          boxShadow: `0 0 10px ${getStatusColor()}20`,
+          backdropFilter: "blur(2px)",
+          textShadow: "0 0 6px rgba(255, 170, 48, 0.5)"
+        }}>
+          <div>CORE BRAIN: <span style={{ color: getStatusColor(), fontWeight: "bold", textShadow: `0 0 8px ${getStatusColor()}` }}>{jarvisStatus.toUpperCase()}</span></div>
+          {lastQuery && (
+            <div style={{ marginTop: "10px", fontSize: "11px", color: "#ffcc66" }}>
+              <span style={{ opacity: 0.6 }}>USER:</span> {lastQuery}
+            </div>
+          )}
+          {lastResponse && (
+            <div style={{ marginTop: "6px", fontSize: "11px", color: "#00ffcc", borderLeft: "2px solid #00ffcc", paddingLeft: "6px" }}>
+              <span style={{ opacity: 0.6, color: "#ffaa30" }}>JARVIS:</span> {lastResponse}
+            </div>
+          )}
+        </div>
+
+        <form onSubmit={handleSendCommand} style={{ display: "flex", gap: "6px" }}>
+          <input
+            type="text"
+            placeholder={jarvisStatus === "offline" ? "JARVIS OFFLINE" : "Enter command..."}
+            disabled={jarvisStatus === "offline" || isSubmitting}
+            value={commandInput}
+            onChange={(e) => setCommandInput(e.target.value)}
+            style={{
+              flex: 1,
+              background: "rgba(10, 5, 0, 0.7)",
+              border: "1px solid rgba(255, 170, 48, 0.45)",
+              borderRadius: "4px",
+              padding: "8px 12px",
+              color: "#ffaa30",
+              fontFamily: "'Courier New', monospace",
+              fontSize: "12px",
+              outline: "none",
+              boxShadow: "0 0 8px rgba(255, 140, 20, 0.1) inset"
+            }}
+          />
+          <button
+            type="submit"
+            disabled={jarvisStatus === "offline" || isSubmitting}
+            className="hud-btn"
+            style={{ height: "auto", padding: "0 16px" }}
+          >
+            EXEC
+          </button>
+        </form>
+      </div>
+
+      <div className="hud hud-hint">
+        <div>
+          <span className="key">DRAG</span> spin&nbsp;&nbsp;
+          <span className="key">SCROLL</span> zoom
+        </div>
+        {cameraOn ? (
+          <div>
+            <span className="key">PINCH + MOVE</span> spin&nbsp;&nbsp;
+            <span className="key">PINCH BOTH HANDS ± SPREAD</span> zoom
+          </div>
+        ) : (
+          <div>
+            <span className="key">G</span> hand gestures&nbsp;&nbsp;
+            <span className="key">R</span> reset&nbsp;&nbsp;
+            <span className="key">+/−</span> zoom
+          </div>
+        )}
+      </div>
+
+      <div className="hud hud-controls">
+        <div className={`camera-panel${cameraOn ? " visible" : ""}`}>
+          <video ref={videoRef} muted playsInline className="camera-video" />
+          <canvas ref={overlayRef} width={208} height={156} className="camera-overlay" />
+          <div className="camera-status">
+            {status.hands > 0
+              ? `${status.hands} HAND${status.hands > 1 ? "S" : ""} · ${MODE_LABEL[status.mode]}`
+              : "SHOW HANDS"}
+          </div>
+        </div>
+
+        {error && <div className="hud-error">{error}</div>}
+
+        <div className="hud-row">
+          <button
+            type="button"
+            className="hud-btn"
+            aria-pressed={cameraOn}
+            onClick={toggleGestures}
+            disabled={camera === "starting"}
+          >
+            {camera === "starting" ? "INITIALIZING…" : cameraOn ? "GESTURES ON" : "GESTURES OFF"}
+          </button>
+        </div>
+        <div className="hud-row">
+          <button type="button" className="hud-btn" onClick={() => sceneRef.current?.zoomIn()} aria-label="Zoom in">
+            +
+          </button>
+          <button type="button" className="hud-btn" onClick={() => sceneRef.current?.zoomOut()} aria-label="Zoom out">
+            −
+          </button>
+          <button type="button" className="hud-btn" onClick={() => sceneRef.current?.resetView()}>
+            RESET
+          </button>
+        </div>
+      </div>
+    </>
+  );
+}
+
+
+================================================================================
+FILE 3: wakeup_jarvis_api.bat
+LOCATION: C:\Users\DELL\OneDrive\Desktop\assistent\wakeup_jarvis_api.bat
+================================================================================
+
+@echo off
+chcp 65001 >nul
+set PYTHONIOENCODING=utf-8
+title JARVIS SYSTEM - API SERVER MODE
+color 0a
+
+echo [SYSTEM] Locating Jarvis directory...
+cd /d "C:\Users\DELL\OneDrive\Desktop\assistent"
+
+if exist ".venv\Scripts\python.exe" (
+    echo [SYSTEM] Awakening Jarvis API Server via virtual environment on port 5001...
+    ".venv\Scripts\python.exe" jarvis_api.py
+) else (
+    echo [SYSTEM] Awakening Jarvis API Server via uv on port 5001...
+    "C:\Users\DELL\.local\bin\uv.exe" run jarvis_api.py
+)
+
+if %ERRORLEVEL% neq 0 (
+    echo [CRASH DETECTED] Jarvis API stopped with exit code %ERRORLEVEL%.
+    pause
+)

@@ -264,7 +264,7 @@ class AIBrain:
         }
         
         try:
-            response = requests.post(config.OLLAMA_URL, json=payload, timeout=15.0)
+            response = requests.post(config.OLLAMA_URL, json=payload, timeout=180.0)
             if response.status_code == 200:
                 answer = response.json().get("response", "I could not generate a thought, Sir.")
                 return answer.strip()

@@ -1,7 +1,7 @@
 @echo off
 chcp 65001 >nul
 set PYTHONIOENCODING=utf-8
-title JARVIS SYSTEM - WAITING FOR NETWORK...
+title JARVIS SYSTEM - STARTUP IN PROGRESS
 color 0a
 
 :: 1. Wait 30 seconds for WiFi & OneDrive to load
@@ -13,22 +13,26 @@ echo [SYSTEM] Locating Jarvis directory...
 cd /d "C:\Users\DELL\OneDrive\Desktop\assistent"
 
 :: Check if directory and project files exist (waiting for OneDrive mount)
-if not exist "jarvis_gui.py" (
+if not exist "jarvis_api.py" (
     echo [WARNING] Jarvis directory not synchronized yet. Waiting 15 more seconds...
     timeout /t 15 /nobreak >nul
 )
 
-:: 3. Run Jarvis using the virtual environment python directly
+:: 3. Run Jarvis API Backend Server (starts Core JARVIS + Port 5001 API)
 if exist ".venv\Scripts\python.exe" (
-    echo [SYSTEM] Awakening Jarvis via virtual environment...
-    ".venv\Scripts\python.exe" jarvis_gui.py
+    echo [SYSTEM] Awakening Jarvis API Server via virtual environment...
+    start "JARVIS Core API" ".venv\Scripts\python.exe" jarvis_api.py
 ) else (
-    echo [SYSTEM] Awakening Jarvis via uv...
-    "C:\Users\DELL\.local\bin\uv.exe" run jarvis_gui.py
+    echo [SYSTEM] Awakening Jarvis API Server via uv...
+    start "JARVIS Core API" "C:\Users\DELL\.local\bin\uv.exe" run jarvis_api.py
 )
 
-:: 4. Keep window open if it crashes (so you can see why)
-if %ERRORLEVEL% neq 0 (
-    echo [CRASH DETECTED] Jarvis stopped with exit code %ERRORLEVEL%.
-    pause
-) 
+:: 4. Wait 5 seconds for API server to initialize
+timeout /t 5 /nobreak >nul
+
+:: 5. Run Next.js / Ultron Web HUD Client
+echo [SYSTEM] Awakening Ultron HUD Web Client...
+cd /d "C:\Users\DELL\OneDrive\Desktop\PROJECTS\ultron-by-sagar-builds"
+start "Ultron HUD Web" cmd /c "npm run dev"
+
+echo [SYSTEM] All systems initiated successfully.
