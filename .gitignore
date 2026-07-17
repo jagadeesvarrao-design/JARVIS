@@ -21,3 +21,5 @@ flask_server.log
 jarvis_startup_stats.json
 jarvis_reminders.json
 jarvis_logs.jsonl
+speech_temp_*.mp3
+speech_temp_*.wav
