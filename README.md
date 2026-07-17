@@ -131,6 +131,24 @@ Includes a background-threaded `RecorderAgent` capable of running video capture,
 * **Verified Safe Domain Filtering**: Filters website reputation using search and Gemini reviews analysis to exclude scam sites, formatting all prices in Rupees (Rs.).
 * **Playwright Automated Checkout**: Automatically spawns a visible Playwright Chrome session, navigates to the cheapest verified retailer, adds the item to the cart, proceeds to checkout, and pauses at the payment screen for secure completion.
 
+### 🌐 Web HUD, 3D Orb UI & Real-Time API Server
+* **3D Glassmorphic HUD**: Integrates a React-based Web HUD ([JarvisOrb.tsx](file:///C:/Users/DELL/OneDrive/Desktop/PROJECTS/ultron-by-sagar-builds/components/JarvisOrb.tsx)) utilizing a high-fidelity WebGL 3D orb.
+* **Server-Sent Events (SSE) Stream**: Outfitted with a multi-threaded Python backend server ([jarvis_api.py](file:///C:/Users/DELL/OneDrive/Desktop/assistent/jarvis_api.py)) on port `5001` that broadcasts events via persistent Server-Sent Events (SSE) to push status shifts (`listening`, `thinking`, `speaking`, `idle`) to the client with sub-millisecond latency.
+* **Real-time Subtitles**: Employs an audio-state callback parser that pushes the active spoken text to the Web HUD, displaying real-time synchronized typewriter subtitles.
+* **CORS Security Whitelist**: Restricts API connections to specified host origins (`http://localhost:3000`, `http://localhost:5173`) to secure connection ports.
+* **Offline Reconnection Fallback**: Features automatic reconnection retries and red glassmorphic overlays in the browser client when the Python server is offline.
+
+```mermaid
+graph TD
+    A[React Client: JarvisOrb.tsx] -- "1. Persistent GET /api/events" --> B[Python ThreadingHTTPServer: jarvis_api.py]
+    B -- "2. Hijacks core callbacks" --> C[JARVIS Core: jarvis.py]
+    C -- "3. Invokes voice worker" --> D[Voice Thread & TTS Engine]
+    D -- "4. Returns speaking state changes" --> B
+    B -- "5. Streams state & current_speech_text" --> A
+    A -- "6. Displays color & rotation transitions" --> E[WebGL 3D Orb / HUD Subtitles]
+    A -- "7. Asynchronous POST /api/command" --> B
+```
+
 ---
 
 ## 📂 Project Structure
